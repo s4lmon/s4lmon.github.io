@@ -1,0 +1,99 @@
+@import url(https://fonts.googleapis.com/css?family=Raleway);
+/* Change font in svg section to match */
+
+html, body{
+    height: 100%;
+    font-weight: 800;
+}
+
+body, html{
+    background: #030321;
+    font-family: Arial;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+
+
+}
+
+.bg {
+    /* My image! */
+    background-image: url("edgwareroad.jpg");
+
+    /* Full height */
+    height: 100%;
+
+    /* Centre and scale the image nicely */
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    -webkit-background-size: cover;
+    -moz-background-size: cover;
+    -o-background-size: cover;
+    background-size: cover;
+    /* Animation to fade background (and everything else) */
+    -webkit-animation: myfirst 5s ; /* Chrome, Safari, Opera */
+    animation: myfirst 5s ;
+}
+
+/* Chrome, Safari, Opera */
+@-webkit-keyframes myfirst {
+    from {opacity: 0.2;}
+    to {opacity: 1;}
+}
+
+/* Standard syntax */
+@keyframes myfirst {
+    from {opacity: 0.2;}
+    to {opacity: 1;}
+}
+
+
+svg {
+    display: block;
+    font: 10.5em 'Raleway';
+    position: fixed;
+    right: 0;
+    top: 50%;
+    /* Keeps halfway along screen, should scale for mobile */
+    transform: translateY(-50%);}
+
+.text-copy {
+    fill: none;
+    stroke: white;
+    stroke-dasharray: 20% 29%; /*Sum here should match stroke offset*/
+    stroke-width: 5px;
+    stroke-dashoffset: 0%;
+    animation: stroke-offset 5s infinite linear;
+}
+
+/* A selection of colours purple will be the theme for now... */
+.text-copy:nth-child(1){
+    /* This first colour won't display because I've recued the stroke-offset animation speed */
+	  stroke: #ffdab9;
+	  animation-delay: -1;
+}
+
+.text-copy:nth-child(2){
+	  stroke: #6a5acd;;
+	  animation-delay: -2s;
+}
+
+.text-copy:nth-child(3){
+	  stroke: #9370DB;
+	  animation-delay: -3s;
+}
+
+.text-copy:nth-child(4){
+	  stroke: #DDA0DD;
+	  animation-delay: -4s;
+}
+
+.text-copy:nth-child(5){
+	  stroke: #8A2BE2;
+	  animation-delay: -5s;
+}
+
+@keyframes stroke-offset{
+	  100% {stroke-dashoffset: -49%;}
+}
