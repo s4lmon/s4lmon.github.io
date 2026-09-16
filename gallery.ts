@@ -362,7 +362,7 @@ async function main(gpu: Renderer) {
     if (!drag) return;
     if (drag.moved) state.target = at(Math.round(turnsOf(state.target - drag.velocity * 150 * devicePixelRatio)));
     else if (e.button === 0) {
-      // A tap on a photo fills the screen with it; any tap while filled lets go
+      // A tap on the centred photo fills the screen with it; a tap on a neighbour scrolls to it
       const turns = turnsOf(state.x + e.clientX * devicePixelRatio - W / 2);
       const i = photoIndex(count, turns);
       const h = fit(photos[i]);
@@ -370,10 +370,9 @@ async function main(gpu: Renderer) {
       const dy = e.clientY * devicePixelRatio - H / 2;
       const onPhoto = photos[i].handle && Math.abs(dx) < (h * photos[i].aspect) / 2 && Math.abs(dy) < h / 2;
       if (state.zoomTarget) unzoom();
-      else if (onPhoto) {
+      else if (onPhoto && i === active) {
         state.zoomed = i;
         state.zoomTarget = 1;
-        go(turns);
       } else go(turns);
     }
     drag = null;
