@@ -14,23 +14,6 @@ import {
   type Series,
 } from './strip.ts';
 
-const WGSL = /* wgsl */ `
-  struct U { rect: vec4f, fade: f32, t: f32 }
-  @group(0) @binding(0) var<uniform> u: U;
-  @group(0) @binding(1) var samp: sampler;
-  @group(0) @binding(2) var tex: texture_2d<f32>;
-  struct V { @builtin(position) p: vec4f, @location(0) uv: vec2f }
-
-  @vertex fn vs(@builtin(vertex_index) i: u32) -> V {
-    let q = vec2f(f32(i & 1u), f32(i >> 1u));
-    return V(vec4f(u.rect.xy + (q * 2.0 - 1.0) * u.rect.zw, 0.0, 1.0), vec2f(q.x, 1.0 - q.y));
-  }
-  fn grain(p: vec2f) -> f32 { return fract(sin(dot(p, vec2f(127.1, 311.7)) + u.t) * 43758.5453) - 0.5; }
-  @fragment fn fs(v: V) -> @location(0) vec4f {
-    let c = textureSample(tex, samp, v.uv).rgb + grain(v.p.xy) * 0.035;
-    return vec4f(c * u.fade, u.fade);
-  }`;
-
 const GLSL_VS = /* glsl */ `#version 300 es
   uniform vec4 rect; out vec2 uv;
   void main() {
@@ -42,7 +25,11 @@ const GLSL_VS = /* glsl */ `#version 300 es
 const GLSL_FS = /* glsl */ `#version 300 es
   precision highp float;
   uniform sampler2D tex; uniform float fade, t; in vec2 uv; out vec4 o;
-  float grain(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7)) + t) * 43758.5453) - 0.5; }
+  float grain(vec2 p) {
+    uint h = uint(p.x) * 1597334677u ^ uint(p.y) * 3812015801u ^ uint(t * 1000.0) * 2798796415u;
+    h ^= h >> 16; h *= 0x7feb352du; h ^= h >> 15; h *= 0x846ca68bu; h ^= h >> 16;
+    return float(h) / 4294967296.0 - 0.5;
+  }
   void main() {
     vec3 c = texture(tex, uv).rgb + grain(gl_FragCoord.xy) * 0.035;
     o = vec4(c * fade, fade);
@@ -52,21 +39,21 @@ type Rgb = [number, number, number];
 // Clip space: centre x, centre y, half width, half height
 type Rect = [number, number, number, number];
 
-interface Item<Handle> {
-  handle: Handle;
+interface Item {
+  handle: WebGLTexture;
   rect: Rect;
   fade: number;
 }
 
-interface Renderer<Handle> {
-  upload(bitmap: ImageBitmap): Handle;
-  frame(items: Item<Handle>[], t: number, background: Rgb): void;
+interface Renderer {
+  upload(bitmap: ImageBitmap): WebGLTexture;
+  frame(items: Item[], t: number, background: Rgb): void;
 }
 
-interface Photo<Handle> {
+interface Photo {
   name: string;
   aspect: number;
-  handle: Handle | null;
+  handle: WebGLTexture | null;
 }
 
 const $ = <T extends Element = HTMLElement>(id: string): T => document.getElementById(id) as unknown as T;
@@ -116,7 +103,7 @@ const names = meta.map((m) => m.name);
 ui.total.textContent = pad(names.length);
 if (!names.length) say('No photos found, add some to the folder and reload');
 
-const renderer = (await webgpu(ui.canvas)) ?? webgl(ui.canvas);
+const renderer = webgl(ui.canvas);
 if (renderer) main(renderer);
 else fallback();
 
@@ -126,72 +113,7 @@ function fallback() {
   say('No GPU rendering available, showing a plain strip');
 }
 
-interface GpuHandle {
-  uniforms: GPUBuffer;
-  bind: GPUBindGroup;
-}
-
-async function webgpu(canvas: HTMLCanvasElement): Promise<Renderer<GpuHandle> | null> {
-  const adapter = await navigator.gpu?.requestAdapter();
-  if (!adapter) return null;
-  const device = await adapter.requestDevice();
-  device.addEventListener('uncapturederror', (e) => say(e.error.message));
-  const ctx = canvas.getContext('webgpu');
-  if (!ctx) return null;
-  const format = navigator.gpu.getPreferredCanvasFormat();
-  ctx.configure({ device, format, alphaMode: 'opaque' });
-
-  const module = device.createShaderModule({ code: WGSL });
-  const blend: GPUBlendComponent = { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' };
-  const pipeline = device.createRenderPipeline({
-    layout: 'auto',
-    vertex: { module, entryPoint: 'vs' },
-    fragment: { module, entryPoint: 'fs', targets: [{ format, blend: { color: blend, alpha: blend } }] },
-    primitive: { topology: 'triangle-strip' },
-  });
-  const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
-  const uniform = new Float32Array(8);
-
-  return {
-    upload(bitmap) {
-      const texture = device.createTexture({
-        size: [bitmap.width, bitmap.height],
-        format: 'rgba8unorm',
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-      });
-      device.queue.copyExternalImageToTexture({ source: bitmap }, { texture }, [bitmap.width, bitmap.height]);
-      const uniforms = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-      const bind = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: { buffer: uniforms } },
-          { binding: 1, resource: sampler },
-          { binding: 2, resource: texture.createView() },
-        ],
-      });
-      return { uniforms, bind };
-    },
-    frame(items, t, bg) {
-      const encoder = device.createCommandEncoder();
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [
-          { view: ctx.getCurrentTexture().createView(), loadOp: 'clear', clearValue: [...bg, 1], storeOp: 'store' },
-        ],
-      });
-      pass.setPipeline(pipeline);
-      for (const { handle, rect, fade } of items) {
-        uniform.set([...rect, fade, t]);
-        device.queue.writeBuffer(handle.uniforms, 0, uniform);
-        pass.setBindGroup(0, handle.bind);
-        pass.draw(4);
-      }
-      pass.end();
-      device.queue.submit([encoder.finish()]);
-    },
-  };
-}
-
-function webgl(canvas: HTMLCanvasElement): Renderer<WebGLTexture> | null {
+function webgl(canvas: HTMLCanvasElement): Renderer | null {
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false });
   if (!gl) return null;
 
@@ -239,13 +161,13 @@ function webgl(canvas: HTMLCanvasElement): Renderer<WebGLTexture> | null {
   };
 }
 
-async function main<Handle>(gpu: Renderer<Handle>) {
-  const photos: Photo<Handle>[] = meta.map(({ name, aspect }) => ({ name, aspect, handle: null }));
+async function main(gpu: Renderer) {
+  const photos: Photo[] = meta.map(({ name, aspect }) => ({ name, aspect, handle: null }));
   const count = photos.length;
 
   // Textures never exceed the screen
   const maxSide = Math.max(innerWidth, innerHeight) * devicePixelRatio;
-  const load = async (p: Photo<Handle>) => {
+  const load = async (p: Photo) => {
     let bitmap = await createImageBitmap(await (await fetch('photos/' + p.name)).blob());
     const k = maxSide / Math.max(bitmap.width, bitmap.height);
     if (k < 1) {
@@ -297,7 +219,7 @@ async function main<Handle>(gpu: Renderer<Handle>) {
   let active = 0;
 
   // Fits height and width, so phones never crop
-  const fit = (p: Photo<Handle>) => Math.min(H * 0.72, (W * 0.9) / p.aspect);
+  const fit = (p: Photo) => Math.min(H * 0.72, (W * 0.9) / p.aspect);
   const at = (turns: number) => stripAt(centres, length, turns);
   const turnsOf = (x: number) => turnsAt(centres, length, x);
   const rel = (i: number) => offset(centres, length, state.x, i);
@@ -469,13 +391,7 @@ async function main<Handle>(gpu: Renderer<Handle>) {
   const onTrace = (e: MouseEvent) =>
     e.clientX < span() && Math.abs(e.clientY - (innerHeight - 64) - traceY(e.clientX)) < 9 + slack;
   const bandCursor = (e: MouseEvent) =>
-    nearDot(e)
-      ? 'var(--cursor-ring)'
-      : onCircle(e)
-        ? 'var(--cursor-fourier)'
-        : onTrace(e)
-          ? 'var(--cursor-stretch)'
-          : '';
+    nearDot(e) ? 'grab' : onCircle(e) ? 'var(--cursor-fourier)' : onTrace(e) ? 'ew-resize' : '';
 
   type Tune = { startX: number; periods: number; turns: number; mode: 'scrub' | 'stretch' | 'click' };
   let tune: Tune | null = null;
@@ -538,7 +454,7 @@ async function main<Handle>(gpu: Renderer<Handle>) {
       caption();
     }
 
-    const items: Item<Handle>[] = [];
+    const items: Item[] = [];
     photos.forEach((p, i) => {
       if (!p.handle) return;
       const distance = Math.min(1, Math.abs(rel(i)) / W);

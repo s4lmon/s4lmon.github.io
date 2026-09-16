@@ -12,6 +12,7 @@ import {
   parseFrontMatter,
   parseHeading,
   readPost,
+  siteName,
 } from '../build.ts';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -127,7 +128,8 @@ test('build lists posts newest first with escaped titles and relative links', ()
 
 test('build renders post pages rooted two levels up', () => {
   const page = readFileSync(join(site(), 'writing', 'newer', 'index.html'), 'utf8');
-  assert.match(page, /<title>Newer · Radical AI<\/title>/);
+  const name = siteName(readFileSync(join(ROOT, 'index.html'), 'utf8'));
+  assert.ok(page.includes(`<title>Newer · ${name}</title>`));
   assert.match(page, /<p>New\.<\/p>/);
   assert.match(page, /September 2026/);
   assert.match(page, /href="\.\.\/\.\.\/"/);
