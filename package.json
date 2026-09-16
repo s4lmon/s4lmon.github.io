@@ -1,0 +1,31 @@
+{
+  "name": "radical-materials",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "node --disable-warning=ExperimentalWarning build.ts",
+    "serve": "npm run build && serve dist",
+    "test": "node --test 'tests/**/*.test.ts'",
+    "check": "tsc --noEmit && prettier --check .",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "marked": "^18.0.13",
+    "marked-footnote": "^1.4.0",
+    "marked-gfm-heading-id": "^4.1.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@webgpu/types": "^0.1.72",
+    "prettier": "^3.9.6",
+    "serve": "^14",
+    "typescript": "^5.8"
+  },
+  "prettier": {
+    "printWidth": 120,
+    "singleQuote": true
+  }
+}

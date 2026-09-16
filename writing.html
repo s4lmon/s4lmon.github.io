@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>$title · Radical AI</title>
+  <script>
+    document.documentElement.dataset.theme = localStorage.theme ?? 'dark';
+  </script>
+  <link rel="icon" href="${root}favicon.svg" type="image/svg+xml" />
+  <link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Overpass+Mono:wght@400;500;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap"
+  />
+  <script src="https://cdn.usefathom.com/script.js" data-site="FATHOM_SITE_ID" defer></script>
+  <style>
+    :root {
+      --bg: #080808;
+      --fg: #dcdcd8;
+      --mute: #8a8a86;
+      --line: #ffffff1f;
+      --accent: #fefc5e;
+      color-scheme: dark;
+    }
+    [data-theme='light'] {
+      --bg: #f7f7f4;
+      --fg: #161616;
+      --mute: #6f6f6b;
+      --line: #00000018;
+      --accent: #c9bf00;
+      color-scheme: light;
+    }
+    html {
+      background: var(--bg);
+      color: var(--fg);
+    }
+    body {
+      margin: 0;
+      padding: 28px 32px 96px;
+      font:
+        400 1.125rem/1.6 Newsreader,
+        Georgia,
+        serif;
+      font-optical-sizing: auto;
+    }
+    header,
+    h1,
+    h2,
+    h3,
+    h4,
+    .date,
+    .toc,
+    .posts,
+    .footnotes,
+    button {
+      font-family: 'Interstate Mono', 'Overpass Mono', ui-monospace, monospace;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    header a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .brand {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .bird {
+      --frames: 164;
+      --size: 24px;
+      width: var(--size);
+      height: var(--size);
+      background: currentColor;
+      mask: url(${root}hummingbird.png) 0 0 / calc(var(--frames) * var(--size)) var(--size) no-repeat;
+      animation: fly calc(var(--frames) * 30ms) steps(var(--frames)) infinite;
+    }
+    @keyframes fly {
+      to {
+        mask-position: calc(var(--frames) * var(--size) * -1) 0;
+      }
+    }
+    }
+    header nav {
+      display: flex;
+      gap: 28px;
+      align-items: baseline;
+    }
+    header nav a {
+      color: var(--mute);
+      font-weight: 400;
+    }
+    header nav a:hover {
+      color: var(--fg);
+    }
+    #theme {
+      all: unset;
+      pointer-events: auto;
+      cursor: pointer;
+      display: inline-flex;
+      padding: 10px;
+      margin: -10px;
+      translate: 0 2px;
+    }
+    main {
+      max-width: 38rem;
+      margin: 14vh auto 0;
+    }
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin: 0 0 0.75rem;
+      text-wrap: balance;
+    }
+    .date {
+      font-size: 12px;
+      color: var(--mute);
+      margin-bottom: 3rem;
+    }
+    .date:empty {
+      display: none;
+    }
+    h2,
+    h3,
+    h4 {
+      font-weight: 500;
+      letter-spacing: -0.005em;
+      margin: 2.75rem 0 0.75rem;
+    }
+    h2 {
+      font-size: 1rem;
+    }
+    h3,
+    h4 {
+      font-size: 0.875rem;
+      color: var(--mute);
+    }
+    p,
+    ul,
+    ol,
+    blockquote,
+    pre {
+      margin: 0 0 1.25rem;
+    }
+    a {
+      color: inherit;
+      text-decoration: underline;
+      text-decoration-color: var(--mute);
+      text-underline-offset: 0.15em;
+    }
+    a:hover {
+      text-decoration-color: var(--accent);
+    }
+    blockquote {
+      margin-left: 0;
+      padding-left: 1.25rem;
+      border-left: 1px solid var(--line);
+      color: var(--mute);
+      font-style: italic;
+    }
+    img {
+      max-width: 100%;
+      display: block;
+      margin: 2rem 0;
+    }
+    code {
+      font:
+        400 0.85em 'Interstate Mono',
+        'Overpass Mono',
+        ui-monospace,
+        monospace;
+    }
+    pre {
+      padding: 1rem 1.25rem;
+      border: 1px solid var(--line);
+      overflow-x: auto;
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+    hr {
+      border: 0;
+      border-top: 1px solid var(--line);
+      margin: 3rem 0;
+    }
+    .toc {
+      font-size: 12px;
+      margin-bottom: 3rem;
+    }
+    .toc::before {
+      content: 'Contents';
+      color: var(--mute);
+    }
+    .toc ul {
+      list-style: none;
+      padding: 0;
+      margin: 0.5rem 0 0;
+    }
+    .toc .l3 {
+      padding-left: 1.5rem;
+    }
+    .toc li {
+      margin: 0.3rem 0;
+    }
+    .toc a {
+      text-decoration: none;
+    }
+    .toc a:hover {
+      color: var(--accent);
+    }
+    .posts {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      font-size: 14px;
+    }
+    .posts li {
+      display: flex;
+      justify-content: space-between;
+      gap: 2rem;
+      padding: 1rem 0;
+      border-top: 1px solid var(--line);
+    }
+    .posts li:last-child {
+      border-bottom: 1px solid var(--line);
+    }
+    .posts a {
+      text-decoration: none;
+    }
+    .posts a:hover {
+      color: var(--accent);
+    }
+    .posts span {
+      color: var(--mute);
+      white-space: nowrap;
+      font-size: 12px;
+    }
+    .footnotes {
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--mute);
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--line);
+    }
+    .footnotes ol {
+      padding-left: 1.25rem;
+    }
+    .footnotes p {
+      margin: 0 0 0.75rem;
+    }
+    .footnotes a[data-footnote-backref] {
+      text-decoration: none;
+    }
+    .sr-only {
+      display: none;
+    }
+    sup a {
+      text-decoration: none;
+      font-family: 'Interstate Mono', 'Overpass Mono', ui-monospace, monospace;
+      font-size: 0.7em;
+      color: var(--mute);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .bird {
+        animation: none;
+      }
+    }
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 1.75rem;
+      }
+      body {
+        padding: 20px 16px 64px;
+        font-size: 1.0625rem;
+      }
+      main {
+        margin-top: 8vh;
+      }
+    }
+  </style>
+
+  <header>
+    <a class="brand" href="$root">
+      <span class="bird" aria-hidden="true"></span>
+      Radical AI
+    </a>
+    <nav>
+      <a href="${root}writing/">Writing</a>
+      <a href="$root">Photos</a>
+      <button id="theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 16 16" width="14" height="14">
+          <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.2" />
+          <path d="M8 1.5a6.5 6.5 0 0 1 0 13Z" fill="currentColor" />
+        </svg>
+      </button>
+    </nav>
+  </header>
+  <main>
+    <h1>$title</h1>
+    <div class="date">$date</div>
+    $toc $body
+  </main>
+  <script>
+    const toggle = () =>
+      (localStorage.theme = document.documentElement.dataset.theme =
+        document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+    document.getElementById('theme').onclick = toggle;
+    addEventListener('keydown', (e) => e.key === 't' && toggle());
+  </script>
+</html>
