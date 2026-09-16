@@ -1,3 +1,4 @@
+import { imageSize } from 'image-size';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { extname, join, parse } from 'node:path';
@@ -86,6 +87,17 @@ export const listPhotos = (folder: string): string[] =>
     .filter((name) => IMAGE_KINDS.has(extname(name).toLowerCase()))
     .sort();
 
+// Aspect ratios ship with the list so the strip lays out before any photo arrives
+export const photoMeta = (folder: string): { name: string; aspect: number }[] =>
+  listPhotos(folder).map((name) => {
+    try {
+      const { width, height, orientation = 1 } = imageSize(readFileSync(join(folder, name)));
+      return { name, aspect: orientation >= 5 ? height / width : width / height };
+    } catch {
+      return { name, aspect: 1 };
+    }
+  });
+
 // Browsers get plain JavaScript with .js imports
 export const compile = (source: string): string =>
   stripTypeScriptTypes(source).replace(/(from\s+['"]\.[^'"]+)\.ts(['"])/g, '$1.js$2');
@@ -98,7 +110,7 @@ export function build(root = ROOT, dist = join(root, 'dist')): string {
   for (const script of SCRIPTS) {
     writeFileSync(join(dist, script.replace(/\.ts$/, '.js')), compile(readFileSync(join(root, script), 'utf8')));
   }
-  writeFileSync(join(dist, 'photos.json'), JSON.stringify(listPhotos(join(root, 'photos'))));
+  writeFileSync(join(dist, 'photos.json'), JSON.stringify(photoMeta(join(root, 'photos'))));
 
   const posts = readdirSync(join(root, 'writing'))
     .filter((name) => name.endsWith('.md'))

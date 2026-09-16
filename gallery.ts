@@ -4,6 +4,7 @@ import {
   speedStep,
   nextTheme,
   offset,
+  loadOrder,
   phaseAtTurns,
   photoIndex,
   sample,
@@ -65,7 +66,7 @@ interface Renderer<Handle> {
 interface Photo<Handle> {
   name: string;
   aspect: number;
-  handle: Handle;
+  handle: Handle | null;
 }
 
 const $ = <T extends Element = HTMLElement>(id: string): T => document.getElementById(id) as unknown as T;
@@ -91,6 +92,12 @@ const pad = (n: number) => String(n).padStart(2, '0');
 const title = (name: string) => name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ');
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// Seconds per photo, and of quiet after any touch
+const GLIDE = 9;
+const QUIET = 2.5;
+// Square-wave terms, from a pure sine to very square; the middle rung is the default
+const LADDER = [1, 3, 7, 15, 31];
+
 const background = (): Rgb => {
   const hex = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
   return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as Rgb;
@@ -104,7 +111,8 @@ const toggleTheme = () => {
 ui.theme.onclick = toggleTheme;
 addEventListener('keydown', (e) => e.key === 't' && toggleTheme());
 
-const names: string[] = await (await fetch('photos.json')).json();
+const meta: { name: string; aspect: number }[] = await (await fetch('photos.json')).json();
+const names = meta.map((m) => m.name);
 ui.total.textContent = pad(names.length);
 if (!names.length) say('No photos found, add some to the folder and reload');
 
@@ -232,24 +240,36 @@ function webgl(canvas: HTMLCanvasElement): Renderer<WebGLTexture> | null {
 }
 
 async function main<Handle>(gpu: Renderer<Handle>) {
+  const photos: Photo<Handle>[] = meta.map(({ name, aspect }) => ({ name, aspect, handle: null }));
+  const count = photos.length;
+
   // Textures never exceed the screen
   const maxSide = Math.max(innerWidth, innerHeight) * devicePixelRatio;
-  const photos: Photo<Handle>[] = await Promise.all(
-    names.map(async (name) => {
-      let bitmap = await createImageBitmap(await (await fetch('photos/' + name)).blob());
-      const k = maxSide / Math.max(bitmap.width, bitmap.height);
-      if (k < 1) {
-        const resize = {
-          resizeWidth: bitmap.width * k,
-          resizeHeight: bitmap.height * k,
-          resizeQuality: 'high' as const,
-        };
-        bitmap = await createImageBitmap(bitmap, resize).catch(() => bitmap);
-      }
-      return { name, aspect: bitmap.width / bitmap.height, handle: gpu.upload(bitmap) };
-    }),
-  );
-  const count = photos.length;
+  const load = async (p: Photo<Handle>) => {
+    let bitmap = await createImageBitmap(await (await fetch('photos/' + p.name)).blob());
+    const k = maxSide / Math.max(bitmap.width, bitmap.height);
+    if (k < 1) {
+      const resize = {
+        resizeWidth: bitmap.width * k,
+        resizeHeight: bitmap.height * k,
+        resizeQuality: 'high' as const,
+      };
+      bitmap = await createImageBitmap(bitmap, resize).catch(() => bitmap);
+    }
+    p.handle = gpu.upload(bitmap);
+    const ratio = bitmap.width / bitmap.height;
+    // Metadata can be off for unreadable or oddly oriented files; a re-layout mid-drag would jolt the strip
+    if (Math.abs(ratio - p.aspect) > 0.01 && !drag) {
+      p.aspect = ratio;
+      layout();
+    }
+  };
+
+  const queue = loadOrder(count, photoIndex(count, +localStorage.turns || 0));
+  let failed = 0;
+  const worker = async () => {
+    for (let i = queue.shift(); i !== undefined; i = queue.shift()) await load(photos[i]).catch(() => failed++);
+  };
 
   const state = {
     x: 0,
@@ -258,14 +278,17 @@ async function main<Handle>(gpu: Renderer<Handle>) {
     turns: ((+localStorage.turns % count) + count) % count || 0,
     // Photos across the trace, sets drift speed
     periods: count,
-    harmonics: 1,
+    rung: 2,
     phi: 0,
+    zoom: 0,
+    zoomTarget: 0,
+    zoomed: 0,
     intro: 0,
     pointer: { x: NaN, y: NaN, nx: 0, ny: 0, px: 0, py: 0 },
     clock: performance.now(),
-    restUntil: performance.now() + 2500,
+    restUntil: performance.now() + QUIET * 1000,
   };
-  const touch = () => (state.restUntil = performance.now() + 2500);
+  const touch = () => (state.restUntil = performance.now() + QUIET * 1000);
 
   let W = 0;
   let H = 0;
@@ -295,7 +318,7 @@ async function main<Handle>(gpu: Renderer<Handle>) {
 
   const caption = () => (ui.counter.textContent = pad(active + 1));
 
-  let series: Series = fourier(state.harmonics);
+  let series: Series = fourier(LADDER[state.rung]);
 
   // Oscilloscope: the dot travels the trace once per loop
   const AMP = 12;
@@ -313,16 +336,19 @@ async function main<Handle>(gpu: Renderer<Handle>) {
     ui.curve.setAttribute('d', points.join(''));
   }
 
-  function drawDot(phi: number) {
-    const beats = phi / Math.PI;
-    const cx = ((((beats % state.periods) + state.periods) % state.periods) / state.periods) * span();
+  // The trace restarts every sweep, so the dot and circles follow the phase as drawn, not as counted
+  function drawDot(unwrapped: number) {
+    const beats = unwrapped / Math.PI;
+    const sweep = (((beats % state.periods) + state.periods) % state.periods) / state.periods;
+    const phi = sweep * state.periods * Math.PI;
+    const cx = sweep * span();
     ui.dot.setAttribute('cx', String(cx));
     ui.dot.setAttribute('cy', String(32 - AMP * sample(series, phi)));
 
     let x = innerWidth - 40;
     let y = 32;
-    const circles = series.ks.map((k) => {
-      const r = AMP / k;
+    const circles = series.terms.map(({ k, a }) => {
+      const r = AMP * a;
       const circle = `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}"/>`;
       x += r * Math.cos(k * (phi + Math.PI / 2));
       y -= r * Math.sin(k * (phi + Math.PI / 2));
@@ -349,6 +375,7 @@ async function main<Handle>(gpu: Renderer<Handle>) {
     state.target = at(Math.round(turns));
     touch();
   };
+  const unzoom = () => (state.zoomTarget = 0);
 
   interface Drag {
     startX: number;
@@ -359,12 +386,16 @@ async function main<Handle>(gpu: Renderer<Handle>) {
     moved: boolean;
   }
   let drag: Drag | null = null;
+  let settle: ReturnType<typeof setTimeout>;
 
   addEventListener(
     'wheel',
     (e) => {
       state.target += (e.deltaX + e.deltaY) * devicePixelRatio;
+      unzoom();
       touch();
+      clearTimeout(settle);
+      settle = setTimeout(() => (state.target = at(Math.round(turnsOf(state.target)))), 150);
     },
     { passive: true },
   );
@@ -390,22 +421,40 @@ async function main<Handle>(gpu: Renderer<Handle>) {
     drag.velocity = (e.clientX - drag.lastX) / Math.max(1, e.timeStamp - drag.lastTime);
     drag.lastX = e.clientX;
     drag.lastTime = e.timeStamp;
-    if (drag.moved) state.target = drag.origin - (e.clientX - drag.startX) * devicePixelRatio;
+    if (drag.moved) {
+      state.target = drag.origin - (e.clientX - drag.startX) * devicePixelRatio;
+      unzoom();
+    }
     touch();
   });
   addEventListener('pointerup', (e) => {
     if (!drag) return;
-    if (drag.moved) state.target -= drag.velocity * 150 * devicePixelRatio;
-    else {
+    if (drag.moved) state.target = at(Math.round(turnsOf(state.target - drag.velocity * 150 * devicePixelRatio)));
+    else if (e.button === 0) {
+      // A tap on a photo fills the screen with it; any tap while filled lets go
       const turns = turnsOf(state.x + e.clientX * devicePixelRatio - W / 2);
-      if (Math.round(turns) !== Math.round(state.turns)) go(turns);
+      const i = photoIndex(count, turns);
+      const h = fit(photos[i]);
+      const dx = e.clientX * devicePixelRatio - (W / 2 + rel(i) - state.pointer.px * H * 0.01);
+      const dy = e.clientY * devicePixelRatio - H / 2;
+      const onPhoto = photos[i].handle && Math.abs(dx) < (h * photos[i].aspect) / 2 && Math.abs(dy) < h / 2;
+      if (state.zoomTarget) unzoom();
+      else if (onPhoto) {
+        state.zoomed = i;
+        state.zoomTarget = 1;
+        go(turns);
+      } else go(turns);
     }
     drag = null;
   });
   addEventListener('pointerout', (e) => e.relatedTarget === null && (state.pointer.x = NaN));
   addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') unzoom();
     const step = keyStep(e.key);
-    if (step) go(Math.round(state.turns) + step);
+    if (step) {
+      go(Math.round(state.turns) + step);
+      unzoom();
+    }
     const speed = speedStep(e.key);
     if (speed) setPeriods(state.periods + speed);
   });
@@ -450,8 +499,8 @@ async function main<Handle>(gpu: Renderer<Handle>) {
   });
   ui.wave.addEventListener('pointerup', (e) => {
     if (tune?.mode === 'click' && Math.abs(e.clientX - tune.startX) < 4) {
-      state.harmonics = Math.min(127, Math.max(1, state.harmonics + (e.button === 2 ? -2 : 2)));
-      series = fourier(state.harmonics);
+      state.rung = Math.min(LADDER.length - 1, Math.max(0, state.rung + (e.button === 2 ? -1 : 1)));
+      series = fourier(LADDER[state.rung]);
       drawCurve();
     }
     tune = null;
@@ -467,6 +516,8 @@ async function main<Handle>(gpu: Renderer<Handle>) {
     const { pointer } = state;
     state.x = ease(state.x, state.target, k(9));
     pointer.px = ease(pointer.px, pointer.nx, k(4));
+    state.zoom = ease(state.zoom, state.zoomTarget, k(6));
+    document.body.classList.toggle('zoomed', state.zoomTarget === 1);
     pointer.py = ease(pointer.py, pointer.ny, k(4));
     state.intro = ease(state.intro, 1, k(2.2));
 
@@ -476,9 +527,8 @@ async function main<Handle>(gpu: Renderer<Handle>) {
     const column = (fit(photos[active]) * photos[active].aspect) / 2;
     const aboveBand = pointer.y < innerHeight - 64;
     const hovering = aboveBand && Math.abs(pointer.x * devicePixelRatio - (W / 2 + rel(active))) < column;
-    const boost = aboveBand ? 1 + 3 * Math.max(0, pointer.px) : 1;
-    if (!drag && !hovering && now > state.restUntil) {
-      state.phi += dt * Math.PI * (1 / 9) * (state.periods / count) * boost;
+    if (!drag && !hovering && state.zoom < 0.01 && now > state.restUntil) {
+      state.phi += ((dt * Math.PI) / GLIDE) * (state.periods / count);
       state.target = at(turnsAtPhase(series, state.phi));
     } else state.phi = phaseAtTurns(turns);
     drawDot(state.phi);
@@ -490,17 +540,20 @@ async function main<Handle>(gpu: Renderer<Handle>) {
 
     const items: Item<Handle>[] = [];
     photos.forEach((p, i) => {
+      if (!p.handle) return;
       const distance = Math.min(1, Math.abs(rel(i)) / W);
-      const h = fit(p) * (1 - 0.08 * distance);
+      const fill = Math.min(H * 0.94, (W * 0.94) / p.aspect);
+      const grow = i === state.zoomed ? state.zoom : 0;
+      const h = fit(p) * (1 - 0.08 * distance) * (1 - grow) + fill * grow;
       const w = h * p.aspect;
-      const parallax = pointer.px * H * 0.01 * (i === active ? 1 : 0.5);
+      const parallax = pointer.px * H * 0.01 * (i === active ? 1 : 0.5) * (1 - state.zoom);
       const cx = W / 2 + rel(i) + (1 - state.intro) * W * 0.12 - parallax;
       const cy = H / 2 - pointer.py * H * 0.006;
       if (cx + w / 2 < 0 || cx - w / 2 > W) return;
       items.push({
         handle: p.handle,
         rect: [(cx / W) * 2 - 1, 1 - (cy / H) * 2, w / W, h / H],
-        fade: (1 - 0.6 * distance) * state.intro,
+        fade: (1 - 0.6 * distance) * state.intro * (i === state.zoomed ? 1 : 1 - state.zoom),
       });
     });
     gpu.frame(items, reduceMotion ? 0 : now / 1000, background());
@@ -511,4 +564,6 @@ async function main<Handle>(gpu: Renderer<Handle>) {
   caption();
   drawCurve();
   requestAnimationFrame(frame);
+  // Launched last so the loaders only ever see fully initialised state
+  void Promise.all([worker(), worker(), worker()]).then(() => failed && say(`${failed} photos failed to load`));
 }

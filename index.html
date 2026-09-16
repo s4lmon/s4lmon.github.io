@@ -2,7 +2,7 @@
 <html lang="en">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hasan Amin</title>
+  <title>Radical Materials</title>
   <script>
     document.documentElement.dataset.theme = localStorage.theme ?? 'dark';
   </script>
@@ -31,6 +31,15 @@
       --cursor-fourier: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='25' height='25'%3E%3Cpath d='M17.0 9.0C17.0 8.5 16.1 8.5 15.8 8.5H11.6C11.1 8.5 10.1 8.9 9.9 9.5C9.9 9.5 10.0 9.5 10.0 9.5C10.3 9.5 10.6 9.3 10.8 9.2C11.1 9.2 11.4 9.1 11.8 9.1H12.5C12.5 9.1 12.4 9.3 12.4 9.4C12.0 11.4 11.3 13.1 10.8 14.2C10.8 14.3 10.2 15.7 10.0 15.8C9.5 15.8 9.2 15.6 9.0 15.1C8.9 15.1 8.9 15.0 8.9 15.0C8.6 15.0 8.0 15.4 8.0 15.6C8.0 15.6 8.0 15.6 8.0 15.6C8.2 16.2 8.7 16.5 9.3 16.5C9.8 16.5 10.5 16.1 10.8 15.6C11.2 15.2 11.9 13.4 12.2 12.7H14.4C14.3 12.8 14.3 12.8 14.3 12.8C14.3 12.8 14.4 12.9 14.4 12.9C14.7 12.9 15.3 12.5 15.3 12.2C15.3 12.1 15.2 12.1 15.1 12.1H12.5C12.7 11.1 13.1 10.2 13.3 9.1H14.8C15.1 9.1 15.8 9.1 16.0 9.3C16.0 9.4 16.0 9.5 16.0 9.6C16.1 9.6 16.1 9.6 16.1 9.6C16.4 9.6 17.0 9.3 17.0 9.0Z' fill='black'/%3E%3C/svg%3E") 12 12, pointer;
       color-scheme: light;
     }
+    /* Type grows with the viewport so dense screens don't shrink it */
+    html {
+      font-size: calc(10px + 0.32vw);
+    }
+    @media (resolution < 1.5dppx) {
+      html {
+        font-size: calc(14px + 0.45vw);
+      }
+    }
     html,
     body {
       height: 100%;
@@ -39,7 +48,7 @@
       background: var(--bg);
       color: var(--fg);
       font:
-        400 12px/1.4 'Interstate Mono',
+        400 0.8rem/1.4 'Interstate Mono',
         'Overpass Mono',
         ui-monospace,
         monospace;
@@ -52,6 +61,16 @@
       height: 100%;
       cursor: none;
       touch-action: none;
+    }
+    /* A maximised photo quiets everything else */
+    header,
+    #wave {
+      transition: opacity 0.5s;
+    }
+    .zoomed header,
+    .zoomed #wave {
+      opacity: 0;
+      pointer-events: none;
     }
     header {
       position: fixed;
@@ -96,7 +115,7 @@
     }
     .bird {
       --frames: 164;
-      --size: 24px;
+      --size: 1.6rem;
       width: var(--size);
       height: var(--size);
       background: currentColor;
@@ -107,6 +126,7 @@
       to {
         mask-position: calc(var(--frames) * var(--size) * -1) 0;
       }
+    }
     }
     .mute {
       color: var(--mute);
@@ -142,6 +162,15 @@
     }
     #wave line {
       stroke-width: 0.125;
+    }
+    @media (resolution < 1.5dppx) {
+      #wave path,
+      #wave circle {
+        stroke-width: 1;
+      }
+      #wave line {
+        stroke-width: 0.25;
+      }
     }
     #strip {
       display: none;
@@ -180,14 +209,14 @@
   <header>
     <div class="brand">
       <span class="bird" aria-hidden="true"></span>
-      Hasan Amin
+      Radical AI
     </div>
     <nav>
       <span
         ><b id="n">01</b> <span class="mute">/ <span id="total">00</span></span></span
       >
       <button id="theme" aria-label="Toggle theme">
-        <svg viewBox="0 0 16 16" width="14" height="14">
+        <svg viewBox="0 0 16 16" width="1em" height="1em">
           <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.2" />
           <path d="M8 1.5a6.5 6.5 0 0 1 0 13Z" fill="currentColor" />
         </svg>

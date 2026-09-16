@@ -3,7 +3,16 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { build, compile, listPhotos, parseDate, parseFrontMatter, parseHeading, readPost } from '../build.ts';
+import {
+  build,
+  compile,
+  listPhotos,
+  photoMeta,
+  parseDate,
+  parseFrontMatter,
+  parseHeading,
+  readPost,
+} from '../build.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 const FALLBACK = new Date(2000, 0, 1);
@@ -93,7 +102,7 @@ test('build copies the gallery and writes the photo manifest', () => {
   const dist = site();
   assert.ok(existsSync(join(dist, 'index.html')));
   assert.equal(readFileSync(join(dist, 'photos', 'grain.jpg'), 'utf8'), 'jpg');
-  assert.deepEqual(JSON.parse(readFileSync(join(dist, 'photos.json'), 'utf8')), ['grain.jpg']);
+  assert.deepEqual(JSON.parse(readFileSync(join(dist, 'photos.json'), 'utf8')), [{ name: 'grain.jpg', aspect: 1 }]);
 });
 
 test('build compiles the scripts to plain JavaScript with .js imports', () => {
@@ -131,4 +140,15 @@ test('build replaces previous output', () => {
   write(stale, 'stale');
   build(join(dist, '..'));
   assert.ok(!existsSync(stale));
+});
+
+test('photoMeta reads real dimensions and squares off anything unreadable', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meta-'));
+  const png2x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAACsXFQNAAAADElEQVQIW2P4//8/AwAI/AL+XJ/QAAAAAABJRU5ErkJggg==';
+  writeFileSync(join(dir, 'wide.png'), Buffer.from(png2x1, 'base64'));
+  writeFileSync(join(dir, 'broken.jpg'), '');
+  assert.deepEqual(photoMeta(dir), [
+    { name: 'broken.jpg', aspect: 1 },
+    { name: 'wide.png', aspect: 2 },
+  ]);
 });

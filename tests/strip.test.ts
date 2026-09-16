@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   fourier,
   keyStep,
+  loadOrder,
   nextTheme,
   offset,
   phaseAtTurns,
@@ -55,7 +56,7 @@ test('t flips the theme both ways', () => {
 
 test('with a pure sine the phase drives simple harmonic motion between photos', () => {
   const sine = fourier(1);
-  assert.deepEqual(sine.ks, [1]);
+  assert.deepEqual(sine.terms, [{ k: 1, a: 1 }]);
   close(turnsAtPhase(sine, 0), 0, 1e-3);
   close(turnsAtPhase(sine, Math.PI / 2), 0.5, 1e-3);
   close(turnsAtPhase(sine, Math.PI), 1, 1e-3);
@@ -71,7 +72,28 @@ test('phase and position are inverses for a pure sine', () => {
 
 test('harmonics square the position so the strip holds on a photo then snaps', () => {
   const square = fourier(31);
-  assert.deepEqual(square.ks.slice(0, 3), [1, 3, 5]);
+  assert.deepEqual(
+    square.terms.slice(0, 3).map((t) => t.k),
+    [1, 3, 5],
+  );
   assert.ok(Math.abs(turnsAtPhase(square, Math.PI / 4)) < 0.1, 'still on the photo a quarter of the way through');
   assert.ok(Math.abs(turnsAtPhase(square, (3 * Math.PI) / 4) - 1) < 0.1, 'already on the next photo');
+});
+
+test('Fejér weights keep the square wave flat, monotone and free of overshoot', () => {
+  const square = fourier(31);
+  close(square.peak, 1, 1e-9);
+  const plateau = square.table.slice(0, 200);
+  assert.ok(Math.min(...plateau) > 0.97, 'holds near the top across the plateau');
+  assert.ok(Math.max(...square.table) <= 1 + 1e-9, 'never overshoots');
+  const turns = Array.from({ length: 300 }, (_, i) => turnsAtPhase(square, (i / 299) * Math.PI));
+  assert.ok(
+    turns.every((t, i) => !i || t >= turns[i - 1] - 1e-9),
+    'the strip never backs up',
+  );
+});
+
+test('photos load outwards from the starting one, next before previous, wrapping round', () => {
+  assert.deepEqual(loadOrder(6, 0), [0, 1, 5, 2, 4, 3]);
+  assert.deepEqual(loadOrder(5, 3), [3, 4, 2, 0, 1]);
 });
