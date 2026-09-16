@@ -206,7 +206,7 @@ async function main(gpu: Renderer) {
     zoomTarget: 0,
     zoomed: 0,
     intro: 0,
-    pointer: { x: NaN, y: NaN, nx: 0, ny: 0, px: 0, py: 0 },
+    pointer: { nx: 0, ny: 0, px: 0, py: 0 },
     clock: performance.now(),
     restUntil: performance.now() + QUIET * 1000,
   };
@@ -310,14 +310,25 @@ async function main(gpu: Renderer) {
   let drag: Drag | null = null;
   let settle: ReturnType<typeof setTimeout>;
 
+  // A mouse notch is one photo; a trackpad scrolls freely and settles on the nearest
+  let scrolling = false;
   addEventListener(
     'wheel',
     (e) => {
-      state.target += (e.deltaX + e.deltaY) * devicePixelRatio;
+      const delta = e.deltaX + e.deltaY;
       unzoom();
       touch();
+      if (!scrolling && Math.abs(delta) >= 50) {
+        state.target = at(Math.round(turnsOf(state.target)) + Math.sign(delta));
+        return;
+      }
+      scrolling = true;
+      state.target += delta * devicePixelRatio;
       clearTimeout(settle);
-      settle = setTimeout(() => (state.target = at(Math.round(turnsOf(state.target)))), 150);
+      settle = setTimeout(() => {
+        state.target = at(Math.round(turnsOf(state.target)));
+        scrolling = false;
+      }, 150);
     },
     { passive: true },
   );
@@ -334,8 +345,6 @@ async function main(gpu: Renderer) {
     touch();
   });
   addEventListener('pointermove', (e) => {
-    state.pointer.x = e.clientX;
-    state.pointer.y = e.clientY;
     state.pointer.nx = (e.clientX / innerWidth) * 2 - 1;
     state.pointer.ny = (e.clientY / innerHeight) * 2 - 1;
     if (!drag) return;
@@ -369,7 +378,6 @@ async function main(gpu: Renderer) {
     }
     drag = null;
   });
-  addEventListener('pointerout', (e) => e.relatedTarget === null && (state.pointer.x = NaN));
   addEventListener('keydown', (e) => {
     if (e.key === 'Escape') unzoom();
     const step = keyStep(e.key);
@@ -439,11 +447,7 @@ async function main(gpu: Renderer) {
 
     const turns = (state.turns = turnsOf(state.x));
 
-    // Drift pauses while hovering the centred photo
-    const column = (fit(photos[active]) * photos[active].aspect) / 2;
-    const aboveBand = pointer.y < innerHeight - 64;
-    const hovering = aboveBand && Math.abs(pointer.x * devicePixelRatio - (W / 2 + rel(active))) < column;
-    if (!drag && !hovering && state.zoom < 0.01 && now > state.restUntil) {
+    if (!drag && state.zoom < 0.01 && now > state.restUntil) {
       state.phi += ((dt * Math.PI) / GLIDE) * (state.periods / count);
       state.target = at(turnsAtPhase(series, state.phi));
     } else state.phi = phaseAtTurns(turns);
