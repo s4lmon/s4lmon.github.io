@@ -26,7 +26,7 @@ dated line under it:
 
     September 2026
 
-Headings make a contents list, `[^1]` makes footnotes. 
+Headings make a contents list, `[^1]` makes footnotes.
 
 **Deploy** by pushing to `main`
 

@@ -2,7 +2,7 @@
 <html lang="en">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Radical Materials</title>
+  <title>Hasan Amin</title>
   <script>
     document.documentElement.dataset.theme = localStorage.theme ?? 'dark';
   </script>
@@ -36,8 +36,8 @@
       font-size: calc(10px + 0.32vw);
     }
     @media (resolution < 1.5dppx) {
-      html {
-        font-size: calc(14px + 0.45vw);
+      header {
+        font-size: 1.1rem;
       }
     }
     html,
@@ -47,8 +47,10 @@
       overflow: hidden;
       background: var(--bg);
       color: var(--fg);
+    }
+    body {
       font:
-        400 0.8rem/1.4 'Interstate Mono',
+        500 0.8rem/1.4 'Interstate Mono',
         'Overpass Mono',
         ui-monospace,
         monospace;
@@ -209,7 +211,7 @@
   <header>
     <div class="brand">
       <span class="bird" aria-hidden="true"></span>
-      Radical AI
+      $site
     </div>
     <nav>
       <span

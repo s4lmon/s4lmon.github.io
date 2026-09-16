@@ -2,7 +2,7 @@
 <html lang="en">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>$title · Radical AI</title>
+  <title>$title · $site</title>
   <script>
     document.documentElement.dataset.theme = localStorage.theme ?? 'dark';
   </script>
@@ -73,7 +73,7 @@
     }
     .bird {
       --frames: 164;
-      --size: 24px;
+      --size: 1.6rem;
       width: var(--size);
       height: var(--size);
       background: currentColor;
@@ -299,7 +299,7 @@
   <header>
     <a class="brand" href="$root">
       <span class="bird" aria-hidden="true"></span>
-      Radical AI
+      $site
     </a>
     <nav>
       <a href="${root}writing/">Writing</a>

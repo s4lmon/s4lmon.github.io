@@ -79,6 +79,8 @@ export function readPost(path: string): Post {
   };
 }
 
+export const siteName = (index: string): string => /<title>(.*?)<\/title>/.exec(index)?.[1] ?? '';
+
 export const render = (vars: Record<string, string>): string =>
   PAGE.replace(/\$\{?(\w+)\}?/g, (_, key: string) => vars[key] ?? '');
 
@@ -105,7 +107,10 @@ export const compile = (source: string): string =>
 export function build(root = ROOT, dist = join(root, 'dist')): string {
   rmSync(dist, { recursive: true, force: true });
   cpSync(join(root, 'photos'), join(dist, 'photos'), { recursive: true });
-  for (const file of ['index.html', 'hummingbird.png', 'favicon.svg']) cpSync(join(root, file), join(dist, file));
+  const index = readFileSync(join(root, 'index.html'), 'utf8');
+  const site = siteName(index);
+  writeFileSync(join(dist, 'index.html'), index.replaceAll('$site', site));
+  for (const file of ['hummingbird.png', 'favicon.svg']) cpSync(join(root, file), join(dist, file));
   if (existsSync(join(root, 'fonts'))) cpSync(join(root, 'fonts'), join(dist, 'fonts'), { recursive: true });
   for (const script of SCRIPTS) {
     writeFileSync(join(dist, script.replace(/\.ts$/, '.js')), compile(readFileSync(join(root, script), 'utf8')));
@@ -119,6 +124,7 @@ export function build(root = ROOT, dist = join(root, 'dist')): string {
   for (const post of posts) {
     mkdirSync(join(dist, 'writing', post.slug), { recursive: true });
     const page = render({
+      site,
       root: '../../',
       title: escape(post.title),
       date: dateLabel(post.date),
@@ -134,7 +140,7 @@ export function build(root = ROOT, dist = join(root, 'dist')): string {
   mkdirSync(join(dist, 'writing'), { recursive: true });
   writeFileSync(
     join(dist, 'writing', 'index.html'),
-    render({ root: '../', title: 'Writing', body: `<ul class="posts">${items.join('')}</ul>` }),
+    render({ site, root: '../', title: 'Writing', body: `<ul class="posts">${items.join('')}</ul>` }),
   );
   return dist;
 }
