@@ -84,7 +84,7 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Seconds per photo, and of quiet after any touch
 const GLIDE = 9;
 const QUIET = 2.5;
-// Clipping gain, from a pure sine to nearly square; the middle rung is the default
+// Clipping gain per rung; the middle is the default
 const LADDER = [1, 1.25, 2, 3.5, 8];
 
 const background = (): Rgb => {
@@ -180,9 +180,14 @@ async function main(gpu: Renderer) {
       };
       bitmap = await createImageBitmap(bitmap, resize).catch(() => bitmap);
     }
+    pending.push([p, bitmap]);
+  };
+
+  const pending: [Photo, ImageBitmap][] = [];
+  const attach = ([p, bitmap]: [Photo, ImageBitmap]) => {
     p.handle = gpu.upload(bitmap);
     const ratio = bitmap.width / bitmap.height;
-    // Metadata can be off for unreadable or oddly oriented files; a re-layout mid-drag would jolt the strip
+    // Bad metadata gets corrected here, but not mid-drag
     if (Math.abs(ratio - p.aspect) > 0.01 && !drag) {
       p.aspect = ratio;
       layout();
@@ -268,7 +273,7 @@ async function main(gpu: Renderer) {
     );
   }
 
-  // The trace restarts every sweep, so the dot and circles follow the phase as drawn, not as counted
+  // Dot and circles follow the phase as drawn on the trace
   function drawDot(unwrapped: number) {
     const beats = unwrapped / Math.PI;
     const sweep = (((beats % state.periods) + state.periods) % state.periods) / state.periods;
@@ -291,7 +296,7 @@ async function main(gpu: Renderer) {
     ui.epicycles.innerHTML = circles.join('') + tip + link;
   }
 
-  // Fingers get roomier targets than a mouse
+  // Roomier targets for fingers
   const slack = matchMedia('(pointer: coarse)').matches ? 14 : 0;
   const nearDot = (e: MouseEvent) =>
     Math.hypot(e.clientX - ui.dot.cx.baseVal.value, e.clientY - (innerHeight - 64) - ui.dot.cy.baseVal.value) <
@@ -320,7 +325,7 @@ async function main(gpu: Renderer) {
   let drag: Drag | null = null;
   let settle: ReturnType<typeof setTimeout>;
 
-  // A mouse notch is one photo; a trackpad scrolls freely and settles on the nearest
+  // Wheel notch: one photo. Trackpad: free scroll, snap to nearest
   let scrolling = false;
   addEventListener(
     'wheel',
@@ -372,7 +377,7 @@ async function main(gpu: Renderer) {
     if (!drag) return;
     if (drag.moved) state.target = at(Math.round(turnsOf(state.target - drag.velocity * 150 * devicePixelRatio)));
     else if (e.button === 0) {
-      // A tap on the centred photo fills the screen with it; a tap on a neighbour scrolls to it
+      // Tap the centred photo to fill the screen, a neighbour to scroll to it
       const turns = turnsOf(state.x + e.clientX * devicePixelRatio - W / 2);
       const i = photoIndex(count, turns);
       const h = fit(photos[i]);
@@ -456,6 +461,11 @@ async function main(gpu: Renderer) {
 
     const turns = (state.turns = turnsOf(state.x));
 
+    // One upload a frame; the entry photo jumps the queue, the rest wait for the intro
+    const entry = pending.findIndex(([p]) => p === photos[active]);
+    if (entry >= 0) attach(pending.splice(entry, 1)[0]);
+    else if (pending.length && state.intro > 0.9) attach(pending.shift()!);
+
     if (!drag && state.zoom < 0.01 && now > state.restUntil) {
       state.phi += ((dt * Math.PI) / GLIDE) * (state.periods / count);
       state.target = at(turnsAtPhase(series, state.phi));
@@ -493,6 +503,6 @@ async function main(gpu: Renderer) {
   caption();
   drawCurve();
   requestAnimationFrame(frame);
-  // Launched last so the loaders only ever see fully initialised state
+  // Loaders start last, once state exists
   void Promise.all([worker(), worker(), worker()]).then(() => failed && say(`${failed} photos failed to load`));
 }
