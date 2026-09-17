@@ -5,7 +5,7 @@ export interface Series {
 
 export type Theme = 'dark' | 'light';
 
-// Sine clipped at ±1; more gain, flatter top, longer rest on each photo
+// Sine clipped at ±1, more gain means a flatter top
 export function clipped(gain: number, size = 2048, harmonics = 15): Series {
   const table = Array.from({ length: size }, (_, i) =>
     Math.max(-1, Math.min(1, gain * Math.sin((2 * Math.PI * i) / size + Math.PI / 2))),
@@ -13,7 +13,7 @@ export function clipped(gain: number, size = 2048, harmonics = 15): Series {
   return { table, terms: transform(table, harmonics) };
 }
 
-// Odd sine coefficients; the even ones vanish by symmetry
+// Odd sines only, the rest vanish by symmetry
 export function transform(table: number[], harmonics: number): { k: number; a: number }[] {
   return Array.from({ length: (harmonics + 1) / 2 }, (_, i) => {
     const k = 2 * i + 1;

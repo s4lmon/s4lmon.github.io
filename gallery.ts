@@ -84,7 +84,7 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Seconds per photo, and of quiet after any touch
 const GLIDE = 9;
 const QUIET = 2.5;
-// Clipping gain per rung; the middle is the default
+// How hard the sine is clipped
 const LADDER = [1, 1.25, 2, 3.5, 8];
 
 const background = (): Rgb => {
@@ -187,7 +187,7 @@ async function main(gpu: Renderer) {
   const attach = ([p, bitmap]: [Photo, ImageBitmap]) => {
     p.handle = gpu.upload(bitmap);
     const ratio = bitmap.width / bitmap.height;
-    // Bad metadata gets corrected here, but not mid-drag
+    // Fix wrong aspect metadata, but never mid-drag
     if (Math.abs(ratio - p.aspect) > 0.01 && !drag) {
       p.aspect = ratio;
       layout();
@@ -273,7 +273,7 @@ async function main(gpu: Renderer) {
     );
   }
 
-  // Dot and circles follow the phase as drawn on the trace
+  // Phase as drawn, so the dot stays on the trace
   function drawDot(unwrapped: number) {
     const beats = unwrapped / Math.PI;
     const sweep = (((beats % state.periods) + state.periods) % state.periods) / state.periods;
@@ -461,7 +461,7 @@ async function main(gpu: Renderer) {
 
     const turns = (state.turns = turnsOf(state.x));
 
-    // One upload a frame; the entry photo jumps the queue, the rest wait for the intro
+    // One upload a frame, entry photo first, nothing else during the intro
     const entry = pending.findIndex(([p]) => p === photos[active]);
     if (entry >= 0) attach(pending.splice(entry, 1)[0]);
     else if (pending.length && state.intro > 0.9) attach(pending.shift()!);
