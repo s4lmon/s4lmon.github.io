@@ -86,7 +86,7 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Seconds per photo, and of quiet after any touch
 const GLIDE = 9;
-// Pixels uploaded per frame
+// Pixels per band
 const BAND_PIXELS = 1 << 19;
 const QUIET = 2.5;
 // Terms in the series, one is a pure sine
@@ -143,7 +143,7 @@ function webgl(canvas: HTMLCanvasElement): Renderer | null {
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
   return {
-    // Uploaded in bands, one a frame, so no frame carries a whole photo
+    // Upload in bands
     upload(bitmap) {
       const texture = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -191,7 +191,7 @@ async function main(gpu: Renderer) {
 
   // Textures never exceed the screen
   const maxSide = Math.max(innerWidth, innerHeight) * devicePixelRatio;
-  // Photos decode and shrink off the main thread, so the strip never waits on them
+  // Decode off the main thread
   const decoder = new Worker(
     URL.createObjectURL(
       new Blob(
@@ -244,7 +244,7 @@ async function main(gpu: Renderer) {
 
   const queue = loadOrder(count, photoIndex(count, +localStorage.turns || 0));
   let failed = 0;
-  // Only the entry photo loads during the intro, the rest wait for it to settle
+  // Entry photo first, the rest after the intro
   let settled!: () => void;
   const intro = new Promise<void>((resolve) => (settled = resolve));
   const first = queue[0];
@@ -513,7 +513,7 @@ async function main(gpu: Renderer) {
 
     const turns = (state.turns = turnsOf(state.x));
 
-    // One band a frame, entry photo first, nothing else during the intro
+    // One band a frame
     const entry = pending.findIndex(([p]) => p === photos[active]);
     const next = entry >= 0 ? entry : state.intro > 0.9 && pending.length ? 0 : -1;
     if (next >= 0 && attach(pending[next])) pending.splice(next, 1);
