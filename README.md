@@ -1,5 +1,3 @@
-# Radical Materials
-
 A looping photo strip and a writing section, built to plain static files for GitHub Pages.
 
     npm install
