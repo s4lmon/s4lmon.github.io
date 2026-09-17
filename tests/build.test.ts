@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -106,12 +106,17 @@ test('build copies the gallery and writes the photo manifest', () => {
   assert.deepEqual(JSON.parse(readFileSync(join(dist, 'photos.json'), 'utf8')), [{ name: 'grain.jpg', aspect: 1 }]);
 });
 
-test('build compiles the scripts to plain JavaScript with .js imports', () => {
+test('build compiles the scripts to hashed plain JavaScript the page and imports point at', () => {
   const dist = site();
-  const gallery = readFileSync(join(dist, 'gallery.js'), 'utf8');
-  assert.match(gallery, /from '\.\/strip\.js'/);
+  const files = readdirSync(dist);
+  const galleryFile = files.find((f) => /^gallery\.[0-9a-f]{8}\.js$/.test(f));
+  const stripFile = files.find((f) => /^strip\.[0-9a-f]{8}\.js$/.test(f));
+  assert.ok(galleryFile && stripFile, 'both scripts carry a content hash');
+  assert.match(readFileSync(join(dist, 'index.html'), 'utf8'), new RegExp(`src="${galleryFile}"`));
+  const gallery = readFileSync(join(dist, galleryFile!), 'utf8');
+  assert.ok(gallery.includes(`from './${stripFile}'`), 'gallery imports the hashed strip');
   assert.doesNotMatch(gallery, /interface |: number/);
-  assert.ok(existsSync(join(dist, 'strip.js')));
+  assert.ok(!files.includes('gallery.js'), 'no unhashed copy is left to be cached');
   assert.equal(
     compile('const n: number = 1;\nexport { n };\n').replace(/\s+/g, ' ').trim(),
     'const n = 1; export { n };',

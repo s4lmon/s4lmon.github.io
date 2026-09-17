@@ -1,6 +1,7 @@
 import { imageSize } from 'image-size';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
+import { createHash } from 'node:crypto';
 import { extname, join, parse } from 'node:path';
 import { Marked } from 'marked';
 import markedFootnote from 'marked-footnote';
@@ -109,12 +110,21 @@ export function build(root = ROOT, dist = join(root, 'dist')): string {
   cpSync(join(root, 'photos'), join(dist, 'photos'), { recursive: true });
   const index = readFileSync(join(root, 'index.html'), 'utf8');
   const site = siteName(index);
-  writeFileSync(join(dist, 'index.html'), index.replaceAll('$site', site));
   for (const file of ['hummingbird.png', 'favicon.svg']) cpSync(join(root, file), join(dist, file));
   if (existsSync(join(root, 'fonts'))) cpSync(join(root, 'fonts'), join(dist, 'fonts'), { recursive: true });
-  for (const script of SCRIPTS) {
-    writeFileSync(join(dist, script.replace(/\.ts$/, '.js')), compile(readFileSync(join(root, script), 'utf8')));
+  // Hashed names, so a cached script can never meet a newer page
+  const names = new Map<string, string>();
+  for (const script of [...SCRIPTS].reverse()) {
+    let code = compile(readFileSync(join(root, script), 'utf8'));
+    for (const [from, to] of names) code = code.replaceAll(`'./${from}'`, `'./${to}'`);
+    const name = script.replace(/\.ts$/, `.${createHash('sha256').update(code).digest('hex').slice(0, 8)}.js`);
+    names.set(script.replace(/\.ts$/, '.js'), name);
+    writeFileSync(join(dist, name), code);
   }
+  writeFileSync(
+    join(dist, 'index.html'),
+    index.replaceAll('$site', site).replace('src="gallery.js"', `src="${names.get('gallery.js')}"`),
+  );
   writeFileSync(join(dist, 'photos.json'), JSON.stringify(photoMeta(join(root, 'photos'))));
 
   const posts = readdirSync(join(root, 'writing'))
