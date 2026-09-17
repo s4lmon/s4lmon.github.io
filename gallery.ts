@@ -409,15 +409,22 @@ async function main(gpu: Renderer) {
   let drag: Drag | null = null;
   let settle: ReturnType<typeof setTimeout>;
 
-  // One page per wheel gesture, momentum tail ignored
-  let gesture: { from: number; moved: number; turned: boolean } | null = null;
+  // One page per wheel gesture. Tails only decay, so a bigger or reversed delta is a new swipe
+  let gesture: { from: number; moved: number; turned: boolean; last: number } | null = null;
   addEventListener(
     'wheel',
     (e) => {
       unzoom();
       touch();
-      gesture ??= { from: Math.round(turnsOf(state.target)), moved: 0, turned: false };
-      gesture.moved += (e.deltaX + e.deltaY) * devicePixelRatio;
+      const delta = (e.deltaX + e.deltaY) * devicePixelRatio;
+      if (
+        gesture?.turned &&
+        (Math.sign(delta) !== Math.sign(gesture.last) || Math.abs(delta) > Math.abs(gesture.last) * 1.5 + 2)
+      )
+        gesture = null;
+      gesture ??= { from: Math.round(turnsOf(state.target)), moved: 0, turned: false, last: delta };
+      gesture.last = delta;
+      gesture.moved += delta;
       const pages = landing(turnsOf(at(gesture.from) + gesture.moved) - gesture.from, 0);
       if (pages && !gesture.turned) {
         gesture.turned = true;
