@@ -338,10 +338,9 @@ async function main(gpu: Renderer) {
     const circles = series.terms.map(({ k, a }) => {
       const r = AMP * a;
       const circle = `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${Math.abs(r).toFixed(2)}"/>`;
-      const [x0, y0] = [x, y];
       x += r * Math.cos(k * (phi + Math.PI / 2));
       y -= r * Math.sin(k * (phi + Math.PI / 2));
-      return circle + `<line x1="${x0.toFixed(2)}" y1="${y0.toFixed(2)}" x2="${x.toFixed(2)}" y2="${y.toFixed(2)}"/>`;
+      return circle;
     });
     const tip = `<circle class="tip" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="4"/>`;
     const link = `<line x1="${x.toFixed(2)}" y1="${y.toFixed(2)}" x2="${cx.toFixed(2)}" y2="${y.toFixed(2)}"/>`;
