@@ -45,8 +45,13 @@ interface Item {
   fade: number;
 }
 
+interface Upload {
+  texture: WebGLTexture;
+  step(): boolean;
+}
+
 interface Renderer {
-  upload(bitmap: ImageBitmap): WebGLTexture;
+  upload(bitmap: ImageBitmap): Upload;
   frame(items: Item[], t: number, background: Rgb): void;
 }
 
@@ -81,6 +86,8 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Seconds per photo, and of quiet after any touch
 const GLIDE = 9;
+// Pixels uploaded per frame
+const BAND_PIXELS = 1 << 19;
 const QUIET = 2.5;
 // Terms in the series, one is a pure sine
 const LADDER = [1, 3, 7, 15, 31];
@@ -136,15 +143,32 @@ function webgl(canvas: HTMLCanvasElement): Renderer | null {
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
   return {
+    // Uploaded in bands, one a frame, so no frame carries a whole photo
     upload(bitmap) {
       const texture = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
-      gl.generateMipmap(gl.TEXTURE_2D);
+      const levels = Math.floor(Math.log2(Math.max(bitmap.width, bitmap.height))) + 1;
+      gl.texStorage2D(gl.TEXTURE_2D, levels, gl.RGBA8, bitmap.width, bitmap.height);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      return texture;
+      const rows = Math.max(1, Math.floor(BAND_PIXELS / bitmap.width));
+      let y = 0;
+      return {
+        texture,
+        step() {
+          const h = Math.min(rows, bitmap.height - y);
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y);
+          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y, bitmap.width, h, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+          gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+          y += h;
+          if (y < bitmap.height) return false;
+          gl.generateMipmap(gl.TEXTURE_2D);
+          bitmap.close();
+          return true;
+        },
+      };
     },
     frame(items, t, bg) {
       gl.viewport(0, 0, canvas.width, canvas.height);
@@ -167,35 +191,68 @@ async function main(gpu: Renderer) {
 
   // Textures never exceed the screen
   const maxSide = Math.max(innerWidth, innerHeight) * devicePixelRatio;
+  // Photos decode and shrink off the main thread, so the strip never waits on them
+  const decoder = new Worker(
+    URL.createObjectURL(
+      new Blob(
+        [
+          `onmessage = async ({ data: { url, maxSide } }) => {
+            try {
+              let bitmap = await createImageBitmap(await (await fetch(url)).blob());
+              const k = maxSide / Math.max(bitmap.width, bitmap.height);
+              if (k < 1) {
+                const resize = { resizeWidth: bitmap.width * k, resizeHeight: bitmap.height * k, resizeQuality: 'high' };
+                bitmap = await createImageBitmap(bitmap, resize).catch(() => bitmap);
+              }
+              postMessage({ url, bitmap }, [bitmap]);
+            } catch (e) {
+              postMessage({ url, error: String(e) });
+            }
+          };`,
+        ],
+        { type: 'text/javascript' },
+      ),
+    ),
+  );
+  const decoded = new Map<string, [(bitmap: ImageBitmap) => void, (error: Error) => void]>();
+  decoder.onmessage = ({ data }: MessageEvent<{ url: string; bitmap?: ImageBitmap; error?: string }>) => {
+    const [resolve, reject] = decoded.get(data.url)!;
+    decoded.delete(data.url);
+    if (data.bitmap) resolve(data.bitmap);
+    else reject(new Error(data.error));
+  };
   const load = async (p: Photo) => {
-    let bitmap = await createImageBitmap(await (await fetch('photos/' + p.name)).blob());
-    const k = maxSide / Math.max(bitmap.width, bitmap.height);
-    if (k < 1) {
-      const resize = {
-        resizeWidth: bitmap.width * k,
-        resizeHeight: bitmap.height * k,
-        resizeQuality: 'high' as const,
-      };
-      bitmap = await createImageBitmap(bitmap, resize).catch(() => bitmap);
-    }
-    pending.push([p, bitmap]);
+    const url = new URL('photos/' + p.name, location.href).href;
+    const bitmap = await new Promise<ImageBitmap>((resolve, reject) => {
+      decoded.set(url, [resolve, reject]);
+      decoder.postMessage({ url, maxSide });
+    });
+    pending.push([p, gpu.upload(bitmap), bitmap.width / bitmap.height]);
   };
 
-  const pending: [Photo, ImageBitmap][] = [];
-  const attach = ([p, bitmap]: [Photo, ImageBitmap]) => {
-    p.handle = gpu.upload(bitmap);
-    const ratio = bitmap.width / bitmap.height;
+  const pending: [Photo, Upload, number][] = [];
+  const attach = ([p, upload, ratio]: [Photo, Upload, number]) => {
+    if (!upload.step()) return false;
+    p.handle = upload.texture;
     // Fix wrong aspect metadata, but never mid-drag
     if (Math.abs(ratio - p.aspect) > 0.01 && !drag) {
       p.aspect = ratio;
       layout();
     }
+    return true;
   };
 
   const queue = loadOrder(count, photoIndex(count, +localStorage.turns || 0));
   let failed = 0;
+  // Only the entry photo loads during the intro, the rest wait for it to settle
+  let settled!: () => void;
+  const intro = new Promise<void>((resolve) => (settled = resolve));
+  const first = queue[0];
   const worker = async () => {
-    for (let i = queue.shift(); i !== undefined; i = queue.shift()) await load(photos[i]).catch(() => failed++);
+    for (let i = queue.shift(); i !== undefined; i = queue.shift()) {
+      if (i !== first) await intro;
+      await load(photos[i]).catch(() => failed++);
+    }
   };
 
   const state = {
@@ -252,7 +309,7 @@ async function main(gpu: Renderer) {
   const span = () => innerWidth - 40 - AMP;
 
   function drawCurve() {
-    const steps = Math.ceil(span() / 2);
+    const steps = Math.ceil(span() * 4);
     const perPhoto = span() / state.periods;
     ui.wave.setAttribute('viewBox', `0 0 ${innerWidth} 64`);
     const trace = (value: (phi: number) => number) =>
@@ -285,7 +342,7 @@ async function main(gpu: Renderer) {
       y -= r * Math.sin(k * (phi + Math.PI / 2));
       return circle;
     });
-    const tip = `<circle class="tip" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="2"/>`;
+    const tip = `<circle class="tip" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="4"/>`;
     const link = `<line x1="${x.toFixed(2)}" y1="${y.toFixed(2)}" x2="${cx.toFixed(2)}" y2="${y.toFixed(2)}"/>`;
     ui.epicycles.innerHTML = circles.join('') + tip + link;
   }
@@ -452,13 +509,14 @@ async function main(gpu: Renderer) {
     document.body.classList.toggle('zoomed', state.zoomTarget === 1);
     pointer.py = ease(pointer.py, pointer.ny, k(4));
     state.intro = ease(state.intro, 1, k(2.2));
+    if (state.intro > 0.9) settled();
 
     const turns = (state.turns = turnsOf(state.x));
 
-    // One upload a frame, entry photo first, nothing else during the intro
+    // One band a frame, entry photo first, nothing else during the intro
     const entry = pending.findIndex(([p]) => p === photos[active]);
-    if (entry >= 0) attach(pending.splice(entry, 1)[0]);
-    else if (pending.length && state.intro > 0.9) attach(pending.shift()!);
+    const next = entry >= 0 ? entry : state.intro > 0.9 && pending.length ? 0 : -1;
+    if (next >= 0 && attach(pending[next])) pending.splice(next, 1);
 
     if (!drag && state.zoom < 0.01 && now > state.restUntil) {
       state.phi += ((dt * Math.PI) / GLIDE) * (state.periods / count);
