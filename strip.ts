@@ -1,27 +1,29 @@
 export interface Series {
   table: number[];
-  peak: number;
   terms: { k: number; a: number }[];
 }
 
 export type Theme = 'dark' | 'light';
 
-// Square-wave partial sum with Fejér weights: the tapered cutoff removes Gibbs overshoot and keeps each
-// half period monotone, so the strip never backs up on its way to a photo
-export function fourier(harmonics: number, size = 2048): Series {
-  const raw = Array.from({ length: (harmonics + 1) / 2 }, (_, i) => {
-    const k = 2 * i + 1;
-    return { k, a: (1 - k / (harmonics + 1)) / k };
-  });
-  const wave = (terms: { k: number; a: number }[]) =>
-    Array.from({ length: size }, (_, i) =>
-      terms.reduce((sum, { k, a }) => sum + a * Math.sin(k * ((2 * Math.PI * i) / size + Math.PI / 2)), 0),
-    );
-  const scale = 1 / Math.max(...wave(raw).map(Math.abs));
-  const terms = raw.map(({ k, a }) => ({ k, a: a * scale }));
-  const table = wave(terms);
-  return { table, peak: Math.max(...table.map(Math.abs)), terms };
+// A sine clipped at ±1: gain 1 is a pure sine, more gain flattens the top so the strip rests longer on a photo
+export function clipped(gain: number, size = 2048, harmonics = 15): Series {
+  const table = Array.from({ length: size }, (_, i) =>
+    Math.max(-1, Math.min(1, gain * Math.sin((2 * Math.PI * i) / size + Math.PI / 2))),
+  );
+  return { table, terms: transform(table, harmonics) };
 }
+
+// Discrete Fourier transform onto the odd sines, which are all a half-wave symmetric signal has
+export function transform(table: number[], harmonics: number): { k: number; a: number }[] {
+  return Array.from({ length: (harmonics + 1) / 2 }, (_, i) => {
+    const k = 2 * i + 1;
+    const a = table.reduce((sum, v, j) => sum + v * Math.sin(k * ((2 * Math.PI * j) / table.length + Math.PI / 2)), 0);
+    return { k, a: (2 * a) / table.length };
+  });
+}
+
+export const partial = ({ terms }: Series, phi: number): number =>
+  terms.reduce((sum, { k, a }) => sum + a * Math.sin(k * (phi + Math.PI / 2)), 0);
 
 export const sample = ({ table }: Series, phi: number): number =>
   table[Math.floor(((((phi / (2 * Math.PI)) % 1) + 1) % 1) * table.length)];

@@ -1,9 +1,10 @@
 import {
-  fourier,
+  clipped,
   keyStep,
   speedStep,
   nextTheme,
   offset,
+  partial,
   loadOrder,
   phaseAtTurns,
   photoIndex,
@@ -67,6 +68,7 @@ const ui = {
   theme: $<HTMLButtonElement>('theme'),
   wave: $<SVGSVGElement>('wave'),
   curve: $<SVGPathElement>('curve'),
+  approx: $<SVGPathElement>('approx'),
   dot: $<SVGCircleElement>('dot'),
   epicycles: $<SVGGElement>('epi'),
 };
@@ -82,8 +84,8 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Seconds per photo, and of quiet after any touch
 const GLIDE = 9;
 const QUIET = 2.5;
-// Square-wave terms, from a pure sine to very square; the middle rung is the default
-const LADDER = [1, 3, 7, 15, 31];
+// Clipping gain, from a pure sine to nearly square; the middle rung is the default
+const LADDER = [1, 1.25, 2, 3.5, 8];
 
 const background = (): Rgb => {
   const hex = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
@@ -240,7 +242,7 @@ async function main(gpu: Renderer) {
 
   const caption = () => (ui.counter.textContent = pad(active + 1));
 
-  let series: Series = fourier(LADDER[state.rung]);
+  let series: Series = clipped(LADDER[state.rung]);
 
   // Oscilloscope: the dot travels the trace once per loop
   const AMP = 12;
@@ -250,12 +252,20 @@ async function main(gpu: Renderer) {
     const steps = Math.ceil(span() / 2);
     const perPhoto = span() / state.periods;
     ui.wave.setAttribute('viewBox', `0 0 ${innerWidth} 64`);
-    const points = Array.from({ length: steps + 1 }, (_, i) => {
-      const x = (i / steps) * span();
-      const y = 32 - AMP * sample(series, (Math.PI * x) / perPhoto);
-      return `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(2)}`;
-    });
-    ui.curve.setAttribute('d', points.join(''));
+    const trace = (value: (phi: number) => number) =>
+      Array.from({ length: steps + 1 }, (_, i) => {
+        const x = (i / steps) * span();
+        const y = 32 - AMP * value((Math.PI * x) / perPhoto);
+        return `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(2)}`;
+      }).join('');
+    ui.curve.setAttribute(
+      'd',
+      trace((phi) => sample(series, phi)),
+    );
+    ui.approx.setAttribute(
+      'd',
+      trace((phi) => partial(series, phi)),
+    );
   }
 
   // The trace restarts every sweep, so the dot and circles follow the phase as drawn, not as counted
@@ -271,7 +281,7 @@ async function main(gpu: Renderer) {
     let y = 32;
     const circles = series.terms.map(({ k, a }) => {
       const r = AMP * a;
-      const circle = `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}"/>`;
+      const circle = `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${Math.abs(r).toFixed(2)}"/>`;
       x += r * Math.cos(k * (phi + Math.PI / 2));
       y -= r * Math.sin(k * (phi + Math.PI / 2));
       return circle;
@@ -423,7 +433,7 @@ async function main(gpu: Renderer) {
   ui.wave.addEventListener('pointerup', (e) => {
     if (tune?.mode === 'click' && Math.abs(e.clientX - tune.startX) < 4) {
       state.rung = Math.min(LADDER.length - 1, Math.max(0, state.rung + (e.button === 2 ? -1 : 1)));
-      series = fourier(LADDER[state.rung]);
+      series = clipped(LADDER[state.rung]);
       drawCurve();
     }
     tune = null;

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  fourier,
+  clipped,
+  partial,
+  transform,
   keyStep,
   loadOrder,
   nextTheme,
@@ -55,8 +57,9 @@ test('t flips the theme both ways', () => {
 });
 
 test('with a pure sine the phase drives simple harmonic motion between photos', () => {
-  const sine = fourier(1);
-  assert.deepEqual(sine.terms, [{ k: 1, a: 1 }]);
+  const sine = clipped(1);
+  close(sine.terms[0].a, 1, 1e-6);
+  for (const { a } of sine.terms.slice(1)) close(a, 0, 1e-6);
   close(turnsAtPhase(sine, 0), 0, 1e-3);
   close(turnsAtPhase(sine, Math.PI / 2), 0.5, 1e-3);
   close(turnsAtPhase(sine, Math.PI), 1, 1e-3);
@@ -65,32 +68,43 @@ test('with a pure sine the phase drives simple harmonic motion between photos', 
 });
 
 test('phase and position are inverses for a pure sine', () => {
-  const sine = fourier(1);
+  const sine = clipped(1);
   for (const turns of [0.1, 0.5, 0.9, 2.25, -0.75]) close(turnsAtPhase(sine, phaseAtTurns(turns)), turns, 1e-3);
   assert.ok(Number.isFinite(phaseAtTurns(1.02)), 'an overshoot past a photo still yields a phase');
 });
 
-test('harmonics square the position so the strip holds on a photo then snaps', () => {
-  const square = fourier(31);
-  assert.deepEqual(
-    square.terms.slice(0, 3).map((t) => t.k),
-    [1, 3, 5],
+test('clipping gives an exactly flat top, so the strip rests dead centre then moves on', () => {
+  const square = clipped(8);
+  assert.ok(
+    square.table.slice(0, 200).every((v) => v === 1),
+    'flat across the plateau',
   );
-  assert.ok(Math.abs(turnsAtPhase(square, Math.PI / 4)) < 0.1, 'still on the photo a quarter of the way through');
-  assert.ok(Math.abs(turnsAtPhase(square, (3 * Math.PI) / 4) - 1) < 0.1, 'already on the next photo');
-});
-
-test('Fejér weights keep the square wave flat, monotone and free of overshoot', () => {
-  const square = fourier(31);
-  close(square.peak, 1, 1e-9);
-  const plateau = square.table.slice(0, 200);
-  assert.ok(Math.min(...plateau) > 0.97, 'holds near the top across the plateau');
-  assert.ok(Math.max(...square.table) <= 1 + 1e-9, 'never overshoots');
+  assert.equal(turnsAtPhase(square, Math.PI / 4), 0);
+  assert.equal(turnsAtPhase(square, (3 * Math.PI) / 4), 1);
   const turns = Array.from({ length: 300 }, (_, i) => turnsAtPhase(square, (i / 299) * Math.PI));
   assert.ok(
-    turns.every((t, i) => !i || t >= turns[i - 1] - 1e-9),
+    turns.every((t, i) => !i || t >= turns[i - 1]),
     'the strip never backs up',
   );
+});
+
+test('the transform recovers a known series and its partial sums converge on the wave', () => {
+  const size = 2048;
+  const known = Array.from({ length: size }, (_, i) => {
+    const phi = (2 * Math.PI * i) / size + Math.PI / 2;
+    return Math.sin(phi) + 0.3 * Math.sin(3 * phi) - 0.1 * Math.sin(5 * phi);
+  });
+  const terms = transform(known, 7);
+  close(terms[0].a, 1, 1e-9);
+  close(terms[1].a, 0.3, 1e-9);
+  close(terms[2].a, -0.1, 1e-9);
+  close(terms[3].a, 0, 1e-9);
+  const error = (harmonics: number) => {
+    const s = clipped(3, size, harmonics);
+    return Math.max(...s.table.map((v, i) => Math.abs(v - partial(s, (2 * Math.PI * i) / size))));
+  };
+  assert.ok(error(31) < error(7) && error(7) < error(1), 'more terms, closer fit');
+  assert.ok(error(31) > 0.01, 'a finite sum still rings at the corners');
 });
 
 test('photos load outwards from the starting one, next before previous, wrapping round', () => {
