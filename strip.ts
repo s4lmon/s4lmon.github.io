@@ -28,7 +28,7 @@ export const partial = ({ terms }: Series, phi: number): number =>
 export const sample = ({ table }: Series, phi: number): number =>
   table[Math.floor(((((phi / (2 * Math.PI)) % 1) + 1) % 1) * table.length)];
 
-// Phase runs uniformly in time; the wave's value is the position between two photos
+// Phase runs uniformly in time, the wave value is the position between two photos
 export function turnsAtPhase(series: Series, phi: number): number {
   const n = Math.floor(phi / Math.PI);
   const sign = ((n % 2) + 2) % 2 ? -1 : 1;
