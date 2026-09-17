@@ -11,6 +11,7 @@
     rel="stylesheet"
     href="https://fonts.googleapis.com/css2?family=Overpass+Mono:wght@400;500;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap"
   />
+  <link rel="stylesheet" href="${root}site.css" />
   <script src="https://cdn.usefathom.com/script.js" data-site="FATHOM_SITE_ID" defer></script>
   <style>
     :root {
@@ -32,11 +33,10 @@
     html {
       background: var(--bg);
       color: var(--fg);
-      font-size: calc(10px + 0.32vw);
     }
     body {
       margin: 0;
-      padding: 28px 32px 96px;
+      padding: 28px var(--gutter) 96px;
       font:
         400 1.3rem/1.6 Newsreader,
         Georgia,
@@ -54,58 +54,6 @@
     .footnotes,
     button {
       font-family: 'Interstate Mono', 'Overpass Mono', ui-monospace, monospace;
-    }
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      font-size: 0.8rem;
-      font-weight: 500;
-    }
-    header a {
-      color: inherit;
-      text-decoration: none;
-    }
-    .brand {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-    .bird {
-      --frames: 164;
-      --size: 1.6rem;
-      width: var(--size);
-      height: var(--size);
-      background: currentColor;
-      mask: url(${root}hummingbird.png) 0 0 / calc(var(--frames) * var(--size)) var(--size) no-repeat;
-      animation: fly calc(var(--frames) * 30ms) steps(var(--frames)) infinite;
-    }
-    @keyframes fly {
-      to {
-        mask-position: calc(var(--frames) * var(--size) * -1) 0;
-      }
-    }
-    }
-    header nav {
-      display: flex;
-      gap: 28px;
-      align-items: baseline;
-    }
-    header nav a {
-      color: var(--mute);
-      font-weight: 400;
-    }
-    header nav a:hover {
-      color: var(--fg);
-    }
-    #theme {
-      all: unset;
-      pointer-events: auto;
-      cursor: pointer;
-      display: inline-flex;
-      padding: 10px;
-      margin: -10px;
-      translate: 0 2px;
     }
     main {
       max-width: 34rem;

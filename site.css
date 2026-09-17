@@ -1,0 +1,57 @@
+/* Shared by every page */
+:root {
+  --gutter: 32px;
+}
+html {
+  font-size: clamp(12px, 10px + 0.32vw, 17px);
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.33rem;
+  font-weight: 500;
+}
+header a,
+header button {
+  color: inherit;
+  text-decoration: none;
+}
+nav {
+  display: flex;
+  gap: 28px;
+  align-items: baseline;
+}
+nav a {
+  color: var(--mute);
+  font-weight: 400;
+}
+nav a:hover {
+  color: var(--fg);
+}
+#theme {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  padding: 10px;
+  margin: -10px;
+}
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.bird {
+  --frames: 164;
+  --size: 1.6em;
+  width: var(--size);
+  height: var(--size);
+  background: currentColor;
+  mask: url(hummingbird.png) 0 0 / calc(var(--frames) * var(--size)) var(--size) no-repeat;
+  animation: fly calc(var(--frames) * 30ms) steps(var(--frames)) infinite;
+}
+@keyframes fly {
+  to {
+    mask-position: calc(var(--frames) * var(--size) * -1) 0;
+  }
+}

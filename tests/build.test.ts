@@ -91,6 +91,7 @@ const site = () => {
   write(join(root, 'index.html'), readFileSync(join(ROOT, 'index.html'), 'utf8'));
   writeFileSync(join(root, 'hummingbird.png'), 'png');
   writeFileSync(join(root, 'favicon.svg'), '<svg/>');
+  write(join(root, 'site.css'), readFileSync(join(ROOT, 'site.css'), 'utf8'));
   for (const script of ['gallery.ts', 'strip.ts']) write(join(root, script), readFileSync(join(ROOT, script), 'utf8'));
   write(join(root, 'photos', 'grain.jpg'), 'jpg');
   write(join(root, 'photos', 'SOURCES.md'), 'credits');
@@ -117,6 +118,10 @@ test('build compiles the scripts to hashed plain JavaScript the page and imports
   assert.ok(gallery.includes(`from './${stripFile}'`), 'gallery imports the hashed strip');
   assert.doesNotMatch(gallery, /interface |: number/);
   assert.ok(!files.includes('gallery.js'), 'no unhashed copy is left to be cached');
+  const cssFile = files.find((f) => /^site\.[0-9a-f]{8}\.css$/.test(f));
+  assert.ok(cssFile, 'the stylesheet carries a content hash');
+  assert.ok(readFileSync(join(dist, 'index.html'), 'utf8').includes(`href="${cssFile}"`));
+  assert.ok(readFileSync(join(dist, 'writing', 'newer', 'index.html'), 'utf8').includes(`href="../../${cssFile}"`));
   assert.equal(
     compile('const n: number = 1;\nexport { n };\n').replace(/\s+/g, ' ').trim(),
     'const n = 1; export { n };',

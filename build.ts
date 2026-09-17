@@ -112,7 +112,7 @@ export function build(root = ROOT, dist = join(root, 'dist')): string {
   const site = siteName(index);
   for (const file of ['hummingbird.png', 'favicon.svg']) cpSync(join(root, file), join(dist, file));
   if (existsSync(join(root, 'fonts'))) cpSync(join(root, 'fonts'), join(dist, 'fonts'), { recursive: true });
-  // Hashed names, so a cached script can never meet a newer page
+  // Hashed names, so a cached file can never meet a newer page
   const names = new Map<string, string>();
   for (const script of [...SCRIPTS].reverse()) {
     let code = compile(readFileSync(join(root, script), 'utf8'));
@@ -121,9 +121,16 @@ export function build(root = ROOT, dist = join(root, 'dist')): string {
     names.set(script.replace(/\.ts$/, '.js'), name);
     writeFileSync(join(dist, name), code);
   }
+  const css = readFileSync(join(root, 'site.css'), 'utf8');
+  const cssName = `site.${createHash('sha256').update(css).digest('hex').slice(0, 8)}.css`;
+  writeFileSync(join(dist, cssName), css);
+  const page = (vars: Record<string, string>) => render(vars).replaceAll('site.css', cssName);
   writeFileSync(
     join(dist, 'index.html'),
-    index.replaceAll('$site', site).replace('src="gallery.js"', `src="${names.get('gallery.js')}"`),
+    index
+      .replaceAll('$site', site)
+      .replace('src="gallery.js"', `src="${names.get('gallery.js')}"`)
+      .replace('href="site.css"', `href="${cssName}"`),
   );
   writeFileSync(join(dist, 'photos.json'), JSON.stringify(photoMeta(join(root, 'photos'))));
 
@@ -133,7 +140,7 @@ export function build(root = ROOT, dist = join(root, 'dist')): string {
     .sort((a, b) => b.date.getTime() - a.date.getTime());
   for (const post of posts) {
     mkdirSync(join(dist, 'writing', post.slug), { recursive: true });
-    const page = render({
+    const html = page({
       site,
       root: '../../',
       title: escape(post.title),
@@ -141,7 +148,7 @@ export function build(root = ROOT, dist = join(root, 'dist')): string {
       toc: post.toc,
       body: post.body,
     });
-    writeFileSync(join(dist, 'writing', post.slug, 'index.html'), page);
+    writeFileSync(join(dist, 'writing', post.slug, 'index.html'), html);
   }
   // Root-relative links survive a missing trailing slash
   const items = posts.map(
@@ -150,7 +157,7 @@ export function build(root = ROOT, dist = join(root, 'dist')): string {
   mkdirSync(join(dist, 'writing'), { recursive: true });
   writeFileSync(
     join(dist, 'writing', 'index.html'),
-    render({ site, root: '../', title: 'Writing', body: `<ul class="posts">${items.join('')}</ul>` }),
+    page({ site, root: '../', title: 'Writing', body: `<ul class="posts">${items.join('')}</ul>` }),
   );
   return dist;
 }
