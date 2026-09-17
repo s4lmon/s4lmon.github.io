@@ -1,4 +1,3 @@
-import { imageSize } from 'image-size';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { createHash } from 'node:crypto';
@@ -6,6 +5,8 @@ import { extname, join, parse } from 'node:path';
 import { Marked } from 'marked';
 import markedFootnote from 'marked-footnote';
 import { gfmHeadingId, getHeadingList } from 'marked-gfm-heading-id';
+import sharp from 'sharp';
+import { SIZES, variant } from './strip.ts';
 
 const ROOT = import.meta.dirname;
 const IMAGE_KINDS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif', '.gif']);
@@ -91,23 +92,56 @@ export const listPhotos = (folder: string): string[] =>
     .sort();
 
 // Aspect ratios ship with the list so the strip lays out before any photo arrives
-export const photoMeta = (folder: string): { name: string; aspect: number }[] =>
-  listPhotos(folder).map((name) => {
+export interface Meta {
+  name: string;
+  aspect: number;
+  blur: string;
+}
+
+// Sized WebP copies and a blur thumbnail, cached by source file
+export async function renderPhotos(folder: string, out: string, cache: string): Promise<Meta[]> {
+  mkdirSync(out, { recursive: true });
+  mkdirSync(cache, { recursive: true });
+  const metas: Meta[] = [];
+  for (const name of listPhotos(folder)) {
+    const file = join(folder, name);
+    const stamp = join(cache, `${parse(name).name}-${statSync(file).mtimeMs}`);
+    const image = () => sharp(file).rotate();
     try {
-      const { width, height, orientation = 1 } = imageSize(readFileSync(join(folder, name)));
-      return { name, aspect: orientation >= 5 ? height / width : width / height };
+      const { width = 1, height = 1, orientation = 1 } = await image().metadata();
+      for (const size of SIZES) {
+        const cached = `${stamp}.${size}.webp`;
+        if (!existsSync(cached)) {
+          await image()
+            .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 82 })
+            .toFile(cached);
+        }
+        cpSync(cached, join(out, variant(name, size)));
+      }
+      const thumb = `${stamp}.blur`;
+      if (!existsSync(thumb)) {
+        const buffer = await image().resize(24, 24, { fit: 'inside' }).webp({ quality: 50 }).toBuffer();
+        writeFileSync(thumb, `data:image/webp;base64,${buffer.toString('base64')}`);
+      }
+      metas.push({
+        name,
+        aspect: orientation >= 5 ? height / width : width / height,
+        blur: readFileSync(thumb, 'utf8'),
+      });
     } catch {
-      return { name, aspect: 1 };
+      console.error(`skipping unreadable photo ${name}`);
     }
-  });
+  }
+  return metas;
+}
 
 // Browsers get plain JavaScript with .js imports
 export const compile = (source: string): string =>
   stripTypeScriptTypes(source).replace(/(from\s+['"]\.[^'"]+)\.ts(['"])/g, '$1.js$2');
 
-export function build(root = ROOT, dist = join(root, 'dist')): string {
+export async function build(root = ROOT, dist = join(root, 'dist')): Promise<string> {
   rmSync(dist, { recursive: true, force: true });
-  cpSync(join(root, 'photos'), join(dist, 'photos'), { recursive: true });
   const index = readFileSync(join(root, 'index.html'), 'utf8');
   const site = siteName(index);
   for (const file of ['hummingbird.png', 'favicon.svg']) cpSync(join(root, file), join(dist, file));
@@ -132,7 +166,8 @@ export function build(root = ROOT, dist = join(root, 'dist')): string {
       .replace('src="gallery.js"', `src="${names.get('gallery.js')}"`)
       .replace('href="site.css"', `href="${cssName}"`),
   );
-  writeFileSync(join(dist, 'photos.json'), JSON.stringify(photoMeta(join(root, 'photos'))));
+  const photos = await renderPhotos(join(root, 'photos'), join(dist, 'photos'), join(root, '.cache'));
+  writeFileSync(join(dist, 'photos.json'), JSON.stringify(photos));
 
   const posts = readdirSync(join(root, 'writing'))
     .filter((name) => name.endsWith('.md'))
@@ -163,7 +198,8 @@ export function build(root = ROOT, dist = join(root, 'dist')): string {
 }
 
 if (process.argv[1] === import.meta.filename) {
-  const dist = build();
+  const dist = await build();
   const posts = readdirSync(join(dist, 'writing')).length - 1;
-  console.log(`built dist: ${listPhotos(join(dist, 'photos')).length} photos, ${posts} posts`);
+  const photos = JSON.parse(readFileSync(join(dist, 'photos.json'), 'utf8')).length;
+  console.log(`built dist: ${photos} photos, ${posts} posts`);
 }

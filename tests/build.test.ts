@@ -3,11 +3,12 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFil
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import sharp from 'sharp';
 import {
   build,
   compile,
   listPhotos,
-  photoMeta,
+  renderPhotos,
   parseDate,
   parseFrontMatter,
   parseHeading,
@@ -86,29 +87,39 @@ test('photo listing keeps only images, sorted', () => {
   assert.deepEqual(listPhotos(dir), ['a.png', 'b.JPG']);
 });
 
-const site = () => {
+const wide = () =>
+  sharp({ create: { width: 2, height: 1, channels: 3, background: 'red' } })
+    .png()
+    .toBuffer();
+
+const site = async () => {
   const root = scratch();
   write(join(root, 'index.html'), readFileSync(join(ROOT, 'index.html'), 'utf8'));
   writeFileSync(join(root, 'hummingbird.png'), 'png');
   writeFileSync(join(root, 'favicon.svg'), '<svg/>');
   write(join(root, 'site.css'), readFileSync(join(ROOT, 'site.css'), 'utf8'));
   for (const script of ['gallery.ts', 'strip.ts']) write(join(root, script), readFileSync(join(ROOT, script), 'utf8'));
-  write(join(root, 'photos', 'grain.jpg'), 'jpg');
+  mkdirSync(join(root, 'photos'), { recursive: true });
+  writeFileSync(join(root, 'photos', 'grain.jpg'), await wide());
   write(join(root, 'photos', 'SOURCES.md'), 'credits');
   write(join(root, 'writing', 'older.md'), '---\ntitle: Older & Wiser\ndate: 2025-01-01\n---\nOld.\n');
   write(join(root, 'writing', 'newer.md'), '---\ntitle: Newer\ndate: 2026-09-15\n---\nNew.\n');
   return build(root);
 };
 
-test('build copies the gallery and writes the photo manifest', () => {
-  const dist = site();
+test('build renders photos to sized copies and writes the manifest', async () => {
+  const dist = await site();
   assert.ok(existsSync(join(dist, 'index.html')));
-  assert.equal(readFileSync(join(dist, 'photos', 'grain.jpg'), 'utf8'), 'jpg');
-  assert.deepEqual(JSON.parse(readFileSync(join(dist, 'photos.json'), 'utf8')), [{ name: 'grain.jpg', aspect: 1 }]);
+  assert.ok(!existsSync(join(dist, 'photos', 'grain.jpg')), 'originals are never served');
+  for (const size of [1600, 3200]) assert.ok(existsSync(join(dist, 'photos', `grain.${size}.webp`)));
+  const [meta] = JSON.parse(readFileSync(join(dist, 'photos.json'), 'utf8'));
+  assert.equal(meta.name, 'grain.jpg');
+  assert.equal(meta.aspect, 2);
+  assert.match(meta.blur, /^data:image\/webp;base64,/);
 });
 
-test('build compiles the scripts to hashed plain JavaScript the page and imports point at', () => {
-  const dist = site();
+test('build compiles the scripts to hashed plain JavaScript the page and imports point at', async () => {
+  const dist = await site();
   const files = readdirSync(dist);
   const galleryFile = files.find((f) => /^gallery\.[0-9a-f]{8}\.js$/.test(f));
   const stripFile = files.find((f) => /^strip\.[0-9a-f]{8}\.js$/.test(f));
@@ -128,16 +139,16 @@ test('build compiles the scripts to hashed plain JavaScript the page and imports
   );
 });
 
-test('build lists posts newest first with escaped titles and relative links', () => {
-  const index = readFileSync(join(site(), 'writing', 'index.html'), 'utf8');
+test('build lists posts newest first with escaped titles and relative links', async () => {
+  const index = readFileSync(join(await site(), 'writing', 'index.html'), 'utf8');
   assert.ok(index.indexOf('href="../writing/newer/"') < index.indexOf('href="../writing/older/"'));
   assert.match(index, /Older &amp; Wiser/);
   assert.match(index, /January 2025/);
   assert.match(index, /href="\.\.\/"/);
 });
 
-test('build renders post pages rooted two levels up', () => {
-  const page = readFileSync(join(site(), 'writing', 'newer', 'index.html'), 'utf8');
+test('build renders post pages rooted two levels up', async () => {
+  const page = readFileSync(join(await site(), 'writing', 'newer', 'index.html'), 'utf8');
   const name = siteName(readFileSync(join(ROOT, 'index.html'), 'utf8'));
   assert.ok(page.includes(`<title>Newer · ${name}</title>`));
   assert.match(page, /<p>New\.<\/p>/);
@@ -146,21 +157,21 @@ test('build renders post pages rooted two levels up', () => {
   assert.match(page, /href="\.\.\/\.\.\/writing\/"/);
 });
 
-test('build replaces previous output', () => {
-  const dist = site();
+test('build replaces previous output', async () => {
+  const dist = await site();
   const stale = join(dist, 'writing', 'gone', 'index.html');
   write(stale, 'stale');
-  build(join(dist, '..'));
+  await build(join(dist, '..'));
   assert.ok(!existsSync(stale));
 });
 
-test('photoMeta reads real dimensions and squares off anything unreadable', () => {
+test('renderPhotos reads real dimensions and skips anything unreadable', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'meta-'));
-  const png2x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAACsXFQNAAAADElEQVQIW2P4//8/AwAI/AL+XJ/QAAAAAABJRU5ErkJggg==';
-  writeFileSync(join(dir, 'wide.png'), Buffer.from(png2x1, 'base64'));
+  writeFileSync(join(dir, 'wide.png'), await wide());
   writeFileSync(join(dir, 'broken.jpg'), '');
-  assert.deepEqual(photoMeta(dir), [
-    { name: 'broken.jpg', aspect: 1 },
-    { name: 'wide.png', aspect: 2 },
-  ]);
+  const metas = await renderPhotos(dir, join(dir, 'out'), join(dir, 'cache'));
+  assert.deepEqual(
+    metas.map(({ name, aspect }) => ({ name, aspect })),
+    [{ name: 'wide.png', aspect: 2 }],
+  );
 });

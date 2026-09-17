@@ -8,9 +8,11 @@ import {
   phaseAtTurns,
   photoIndex,
   sample,
+  sizeFor,
   stripAt,
   turnsAt,
   turnsAtPhase,
+  variant,
   type Series,
 } from './strip.ts';
 
@@ -52,13 +54,17 @@ interface Upload {
 
 interface Renderer {
   upload(bitmap: ImageBitmap): Upload;
+  free(texture: WebGLTexture): void;
   frame(items: Item[], t: number, background: Rgb): void;
 }
 
 interface Photo {
   name: string;
   aspect: number;
+  blur: string;
   handle: WebGLTexture | null;
+  // Long side of the copy shown, 0 for the blur
+  size: number;
 }
 
 const $ = <T extends Element = HTMLElement>(id: string): T => document.getElementById(id) as unknown as T;
@@ -105,7 +111,7 @@ const toggleTheme = () => {
 ui.theme.onclick = toggleTheme;
 addEventListener('keydown', (e) => e.key === 't' && toggleTheme());
 
-const meta: { name: string; aspect: number }[] = await (await fetch('photos.json')).json();
+const meta: { name: string; aspect: number; blur: string }[] = await (await fetch('photos.json')).json();
 const names = meta.map((m) => m.name);
 ui.total.textContent = pad(names.length);
 if (!names.length) say('No photos found, add some to the folder and reload');
@@ -170,6 +176,9 @@ function webgl(canvas: HTMLCanvasElement): Renderer | null {
         },
       };
     },
+    free(texture) {
+      gl.deleteTexture(texture);
+    },
     frame(items, t, bg) {
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.clearColor(...bg, 1);
@@ -186,7 +195,7 @@ function webgl(canvas: HTMLCanvasElement): Renderer | null {
 }
 
 async function main(gpu: Renderer) {
-  const photos: Photo[] = meta.map(({ name, aspect }) => ({ name, aspect, handle: null }));
+  const photos: Photo[] = meta.map((m) => ({ ...m, handle: null, size: -1 }));
   const count = photos.length;
 
   // Textures never exceed the screen
@@ -221,37 +230,57 @@ async function main(gpu: Renderer) {
     if (data.bitmap) resolve(data.bitmap);
     else reject(new Error(data.error));
   };
-  const load = async (p: Photo) => {
-    const url = new URL('photos/' + p.name, location.href).href;
-    const bitmap = await new Promise<ImageBitmap>((resolve, reject) => {
+  const decode = (url: string) =>
+    new Promise<ImageBitmap>((resolve, reject) => {
       decoded.set(url, [resolve, reject]);
       decoder.postMessage({ url, maxSide });
     });
-    pending.push([p, gpu.upload(bitmap), bitmap.width / bitmap.height]);
-  };
 
-  const pending: [Photo, Upload, number][] = [];
-  const attach = ([p, upload, ratio]: [Photo, Upload, number]) => {
+  interface Pending {
+    p: Photo;
+    upload: Upload;
+    size: number;
+    ratio: number;
+  }
+  const pending: Pending[] = [];
+  const load = async (p: Photo, size: number) => {
+    const url = size ? new URL('photos/' + variant(p.name, size), location.href).href : p.blur;
+    const bitmap = await decode(url);
+    pending.push({ p, upload: gpu.upload(bitmap), size, ratio: bitmap.width / bitmap.height });
+  };
+  const attach = ({ p, upload, size, ratio }: Pending) => {
     if (!upload.step()) return false;
+    if (p.handle) gpu.free(p.handle);
     p.handle = upload.texture;
+    p.size = size;
     // Fix wrong aspect metadata, but never mid-drag
-    if (Math.abs(ratio - p.aspect) > 0.01 && !drag) {
+    if (size && Math.abs(ratio - p.aspect) > 0.01 && !drag) {
       p.aspect = ratio;
       layout();
     }
     return true;
   };
 
+  // The copy that covers a photo drawn this tall
+  const asked = new Set<string>();
+  const want = (p: Photo, h: number) => {
+    const size = sizeFor(Math.max(h, h * p.aspect));
+    if (p.size >= size || asked.has(p.name + size)) return Promise.resolve();
+    asked.add(p.name + size);
+    return load(p, size);
+  };
+
   const queue = loadOrder(count, photoIndex(count, +localStorage.turns || 0));
   let failed = 0;
-  // Entry photo first, the rest after the intro
+  // Blurs straight away, then the entry photo, the rest after the intro
   let settled!: () => void;
   const intro = new Promise<void>((resolve) => (settled = resolve));
   const first = queue[0];
+  for (const p of photos) void load(p, 0).catch(() => failed++);
   const worker = async () => {
     for (let i = queue.shift(); i !== undefined; i = queue.shift()) {
       if (i !== first) await intro;
-      await load(photos[i]).catch(() => failed++);
+      await want(photos[i], fit(photos[i])).catch(() => failed++);
     }
   };
 
@@ -282,6 +311,7 @@ async function main(gpu: Renderer) {
 
   // Fits height and width, so phones never crop
   const fit = (p: Photo) => Math.min(H * 0.72, (W * 0.9) / p.aspect);
+  const fill = (p: Photo) => Math.min(H * 0.94, (W * 0.94) / p.aspect);
   const at = (turns: number) => stripAt(centres, length, turns);
   const turnsOf = (x: number) => turnsAt(centres, length, x);
   const rel = (i: number) => offset(centres, length, state.x, i);
@@ -439,6 +469,7 @@ async function main(gpu: Renderer) {
       else if (onPhoto && i === active) {
         state.zoomed = i;
         state.zoomTarget = 1;
+        void want(photos[i], fill(photos[i])).catch(() => failed++);
       } else go(turns);
     }
     drag = null;
@@ -513,8 +544,9 @@ async function main(gpu: Renderer) {
 
     const turns = (state.turns = turnsOf(state.x));
 
-    // One band a frame
-    const entry = pending.findIndex(([p]) => p === photos[active]);
+    // Blurs at once, then a band a frame, entry photo first
+    for (let n = pending.length - 1; n >= 0; n--) if (!pending[n].size && attach(pending[n])) pending.splice(n, 1);
+    const entry = pending.findIndex((u) => u.p === photos[active]);
     const next = entry >= 0 ? entry : state.intro > 0.9 && pending.length ? 0 : -1;
     if (next >= 0 && attach(pending[next])) pending.splice(next, 1);
 
@@ -533,9 +565,8 @@ async function main(gpu: Renderer) {
     photos.forEach((p, i) => {
       if (!p.handle) return;
       const distance = Math.min(1, Math.abs(rel(i)) / W);
-      const fill = Math.min(H * 0.94, (W * 0.94) / p.aspect);
       const grow = i === state.zoomed ? state.zoom : 0;
-      const h = fit(p) * (1 - 0.08 * distance) * (1 - grow) + fill * grow;
+      const h = fit(p) * (1 - 0.08 * distance) * (1 - grow) + fill(p) * grow;
       const w = h * p.aspect;
       const parallax = pointer.px * H * 0.01 * (i === active ? 1 : 0.5) * (1 - state.zoom);
       const cx = W / 2 + rel(i) + (1 - state.intro) * W * 0.12 - parallax;

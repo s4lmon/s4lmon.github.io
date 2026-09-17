@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   fourier,
+  sizeFor,
+  variant,
   sample,
   keyStep,
   loadOrder,
@@ -87,4 +89,13 @@ test('more terms square the wave, with the ringing a real partial sum has', () =
 test('photos load outwards from the starting one, next before previous, wrapping round', () => {
   assert.deepEqual(loadOrder(6, 0), [0, 1, 5, 2, 4, 3]);
   assert.deepEqual(loadOrder(5, 3), [3, 4, 2, 0, 1]);
+});
+
+test('photos pick the smallest copy that covers how large they are drawn', () => {
+  assert.equal(sizeFor(900), 1600);
+  assert.equal(sizeFor(1600), 1600);
+  assert.equal(sizeFor(1601), 3200);
+  assert.equal(sizeFor(9000), 3200);
+  assert.equal(variant('IMG_2462.JPG', 1600), 'IMG_2462.1600.webp');
+  assert.equal(variant('a.b.png', 3200), 'a.b.3200.webp');
 });

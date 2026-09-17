@@ -67,3 +67,10 @@ export function loadOrder(count: number, start: number): number[] {
   const rank = (i: number) => Math.min((i - start + count) % count, ((start - i + count) % count) + 0.5);
   return Array.from({ length: count }, (_, i) => i).sort((a, b) => rank(a) - rank(b));
 }
+
+// Pre-sized copies, by long side in pixels
+export const SIZES = [1600, 3200];
+
+export const sizeFor = (px: number): number => SIZES.find((s) => s >= px) ?? SIZES[SIZES.length - 1];
+
+export const variant = (name: string, size: number): string => `${name.replace(/\.[^.]+$/, '')}.${size}.webp`;
