@@ -74,3 +74,16 @@ export const SIZES = [1600, 3200];
 export const sizeFor = (px: number): number => SIZES.find((s) => s >= px) ?? SIZES[SIZES.length - 1];
 
 export const variant = (name: string, size: number): string => `${name.replace(/\.[^.]+$/, '')}.${size}.webp`;
+
+// Pages a swipe turns, always the way it went
+export function landing(moved: number, carry: number): number {
+  const travel = moved + carry;
+  if (Math.abs(travel) < 0.06) return 0;
+  return Math.sign(travel) * Math.min(3, Math.max(1, Math.round(Math.abs(travel))));
+}
+
+// Critically damped, keeps its speed and never overshoots
+export function spring(x: number, v: number, target: number, dt: number, omega = 10): [number, number] {
+  const next = v + (omega * omega * (target - x) - 2 * omega * v) * dt;
+  return [x + next * dt, next];
+}

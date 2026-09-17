@@ -1,6 +1,7 @@
 import {
   fourier,
   keyStep,
+  landing,
   speedStep,
   nextTheme,
   offset,
@@ -9,6 +10,7 @@ import {
   photoIndex,
   sample,
   sizeFor,
+  spring,
   stripAt,
   turnsAt,
   turnsAtPhase,
@@ -286,6 +288,7 @@ async function main(gpu: Renderer) {
 
   const state = {
     x: 0,
+    v: 0,
     target: 0,
     // Photo units around the loop
     turns: ((+localStorage.turns % count) + count) % count || 0,
@@ -406,25 +409,22 @@ async function main(gpu: Renderer) {
   let drag: Drag | null = null;
   let settle: ReturnType<typeof setTimeout>;
 
-  // Wheel notch: one photo. Trackpad: free scroll, snap to nearest
-  let scrolling = false;
+  // One page per wheel gesture, momentum tail ignored
+  let gesture: { from: number; moved: number; turned: boolean } | null = null;
   addEventListener(
     'wheel',
     (e) => {
-      const delta = e.deltaX + e.deltaY;
       unzoom();
       touch();
-      if (!scrolling && Math.abs(delta) >= 50) {
-        state.target = at(Math.round(turnsOf(state.target)) + Math.sign(delta));
-        return;
+      gesture ??= { from: Math.round(turnsOf(state.target)), moved: 0, turned: false };
+      gesture.moved += (e.deltaX + e.deltaY) * devicePixelRatio;
+      const pages = landing(turnsOf(at(gesture.from) + gesture.moved) - gesture.from, 0);
+      if (pages && !gesture.turned) {
+        gesture.turned = true;
+        state.target = at(gesture.from + Math.sign(pages));
       }
-      scrolling = true;
-      state.target += delta * devicePixelRatio;
       clearTimeout(settle);
-      settle = setTimeout(() => {
-        state.target = at(Math.round(turnsOf(state.target)));
-        scrolling = false;
-      }, 150);
+      settle = setTimeout(() => (gesture = null), 150);
     },
     { passive: true },
   );
@@ -456,8 +456,12 @@ async function main(gpu: Renderer) {
   });
   addEventListener('pointerup', (e) => {
     if (!drag) return;
-    if (drag.moved) state.target = at(Math.round(turnsOf(state.target - drag.velocity * 150 * devicePixelRatio)));
-    else if (e.button === 0) {
+    if (drag.moved) {
+      const from = Math.round(turnsOf(drag.origin));
+      const carry = turnsOf(state.target - drag.velocity * 150 * devicePixelRatio) - turnsOf(state.target);
+      state.target = at(from + landing(turnsOf(state.target) - from, carry));
+      state.v = -drag.velocity * 1000 * devicePixelRatio;
+    } else if (e.button === 0) {
       // Tap the centred photo to fill the screen, a neighbour to scroll to it
       const turns = turnsOf(state.x + e.clientX * devicePixelRatio - W / 2);
       const i = photoIndex(count, turns);
@@ -534,7 +538,8 @@ async function main(gpu: Renderer) {
     state.clock = now;
     const k = (rate: number) => 1 - Math.exp(-dt * rate);
     const { pointer } = state;
-    state.x = ease(state.x, state.target, k(9));
+    if (reduceMotion || drag?.moved) [state.x, state.v] = [state.target, 0];
+    else [state.x, state.v] = spring(state.x, state.v, state.target, dt);
     pointer.px = ease(pointer.px, pointer.nx, k(4));
     state.zoom = ease(state.zoom, state.zoomTarget, k(6));
     document.body.classList.toggle('zoomed', state.zoomTarget === 1);

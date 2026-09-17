@@ -3,9 +3,11 @@ import { test } from 'node:test';
 import {
   fourier,
   sizeFor,
+  spring,
   variant,
   sample,
   keyStep,
+  landing,
   loadOrder,
   nextTheme,
   offset,
@@ -98,4 +100,32 @@ test('photos pick the smallest copy that covers how large they are drawn', () =>
   assert.equal(sizeFor(9000), 3200);
   assert.equal(variant('IMG_2462.JPG', 1600), 'IMG_2462.1600.webp');
   assert.equal(variant('a.b.png', 3200), 'a.b.3200.webp');
+});
+
+test('a nudge stays, a swipe turns a page the way it went, a fling turns up to three', () => {
+  assert.equal(landing(0.03, 0), 0);
+  assert.equal(landing(0.07, 0), 1);
+  assert.equal(landing(-0.3, 0), -1);
+  assert.equal(landing(1.4, 0), 1);
+  assert.equal(landing(1.6, 0), 2);
+  assert.equal(landing(0.2, 0.9), 1);
+  assert.equal(landing(0.1, 2.6), 3);
+  assert.equal(landing(-4, -2), -3);
+});
+
+test('the spring arrives without overshoot and keeps the speed it is given', () => {
+  let [x, v] = [0, 0];
+  const path: number[] = [];
+  for (let t = 0; t < 1; t += 1 / 120) {
+    [x, v] = spring(x, v, 1, 1 / 120);
+    path.push(x);
+  }
+  assert.ok(
+    path.every((p) => p <= 1 + 1e-9),
+    'never past the target',
+  );
+  close(x, 1, 1e-3);
+  const [fast] = spring(0, 5, 1, 1 / 120);
+  const [slow] = spring(0, 0, 1, 1 / 120);
+  assert.ok(fast > slow + 0.03, 'a fling carries on at its own speed');
 });
