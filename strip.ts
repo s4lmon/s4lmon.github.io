@@ -5,25 +5,14 @@ export interface Series {
 
 export type Theme = 'dark' | 'light';
 
-// Sine clipped at ±1, more gain means a flatter top
-export function clipped(gain: number, size = 2048, harmonics = 15): Series {
+// Square wave partial sum, plain 1/k terms, Gibbs ringing included
+export function fourier(harmonics: number, size = 2048): Series {
+  const terms = Array.from({ length: (harmonics + 1) / 2 }, (_, i) => ({ k: 2 * i + 1, a: 1 / (2 * i + 1) }));
   const table = Array.from({ length: size }, (_, i) =>
-    Math.max(-1, Math.min(1, gain * Math.sin((2 * Math.PI * i) / size + Math.PI / 2))),
+    terms.reduce((sum, { k, a }) => sum + a * Math.sin(k * ((2 * Math.PI * i) / size + Math.PI / 2)), 0),
   );
-  return { table, terms: transform(table, harmonics) };
+  return { table, terms };
 }
-
-// Odd sines only, the rest vanish by symmetry
-export function transform(table: number[], harmonics: number): { k: number; a: number }[] {
-  return Array.from({ length: (harmonics + 1) / 2 }, (_, i) => {
-    const k = 2 * i + 1;
-    const a = table.reduce((sum, v, j) => sum + v * Math.sin(k * ((2 * Math.PI * j) / table.length + Math.PI / 2)), 0);
-    return { k, a: (2 * a) / table.length };
-  });
-}
-
-export const partial = ({ terms }: Series, phi: number): number =>
-  terms.reduce((sum, { k, a }) => sum + a * Math.sin(k * (phi + Math.PI / 2)), 0);
 
 export const sample = ({ table }: Series, phi: number): number =>
   table[Math.floor(((((phi / (2 * Math.PI)) % 1) + 1) % 1) * table.length)];

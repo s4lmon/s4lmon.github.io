@@ -1,10 +1,9 @@
 import {
-  clipped,
+  fourier,
   keyStep,
   speedStep,
   nextTheme,
   offset,
-  partial,
   loadOrder,
   phaseAtTurns,
   photoIndex,
@@ -68,7 +67,6 @@ const ui = {
   theme: $<HTMLButtonElement>('theme'),
   wave: $<SVGSVGElement>('wave'),
   curve: $<SVGPathElement>('curve'),
-  approx: $<SVGPathElement>('approx'),
   dot: $<SVGCircleElement>('dot'),
   epicycles: $<SVGGElement>('epi'),
 };
@@ -84,8 +82,8 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // Seconds per photo, and of quiet after any touch
 const GLIDE = 9;
 const QUIET = 2.5;
-// How hard the sine is clipped
-const LADDER = [1, 1.25, 2, 3.5, 8];
+// Terms in the series, one is a pure sine
+const LADDER = [1, 3, 7, 15, 31];
 
 const background = (): Rgb => {
   const hex = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
@@ -207,7 +205,7 @@ async function main(gpu: Renderer) {
     turns: ((+localStorage.turns % count) + count) % count || 0,
     // Photos across the trace, sets drift speed
     periods: count,
-    rung: 2,
+    rung: 0,
     phi: 0,
     zoom: 0,
     zoomTarget: 0,
@@ -247,7 +245,7 @@ async function main(gpu: Renderer) {
 
   const caption = () => (ui.counter.textContent = pad(active + 1));
 
-  let series: Series = clipped(LADDER[state.rung]);
+  let series: Series = fourier(LADDER[state.rung]);
 
   // Oscilloscope: the dot travels the trace once per loop
   const AMP = 12;
@@ -266,10 +264,6 @@ async function main(gpu: Renderer) {
     ui.curve.setAttribute(
       'd',
       trace((phi) => sample(series, phi)),
-    );
-    ui.approx.setAttribute(
-      'd',
-      trace((phi) => partial(series, phi)),
     );
   }
 
@@ -438,7 +432,7 @@ async function main(gpu: Renderer) {
   ui.wave.addEventListener('pointerup', (e) => {
     if (tune?.mode === 'click' && Math.abs(e.clientX - tune.startX) < 4) {
       state.rung = Math.min(LADDER.length - 1, Math.max(0, state.rung + (e.button === 2 ? -1 : 1)));
-      series = clipped(LADDER[state.rung]);
+      series = fourier(LADDER[state.rung]);
       drawCurve();
     }
     tune = null;
